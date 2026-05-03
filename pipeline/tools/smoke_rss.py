@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import logging
 import sys
+
+from pipeline import logger as _logger
 from pathlib import Path
 
 from pipeline.ingestion.fetch import FetchResult, fetch_urls
@@ -133,12 +134,11 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(message)s",
-        stream=sys.stderr,
-    )
-    return asyncio.run(run(args.limit, do_fetch=not args.no_fetch, days=args.days))
+    log_path = _logger.setup(verbose=args.verbose)
+    try:
+        return asyncio.run(run(args.limit, do_fetch=not args.no_fetch, days=args.days))
+    finally:
+        _logger.close(log_path)
 
 
 if __name__ == "__main__":

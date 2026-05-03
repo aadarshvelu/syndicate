@@ -28,6 +28,7 @@ data/
 pipeline_state/
 db/
 temp/
+logs/
 
 # IDE
 .vscode/

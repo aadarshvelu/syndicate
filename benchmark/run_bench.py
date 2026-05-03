@@ -41,14 +41,14 @@ DEFAULT_OUT = Path("benchmark") / "results.md"
 import os
 MODELS = {
     "qwen": {
-        "repo": os.environ.get("OLLAMA_MODEL_QWEN", "qwen3-embedding:latest"),
+        "repo": os.environ.get("OLLAMA_MODEL_QWEN_EMBEDDING", "qwen3-embedding:latest"),
         "params": "600M",
         "disk_mb": 1200,
         "license": "Apache-2.0",
         "needs_auth": False,
     },
     "gemma": {
-        "repo": os.environ.get("OLLAMA_MODEL_GEMMA", "embeddinggemma:latest"),
+        "repo": os.environ.get("OLLAMA_MODEL_GEMMA_EMBEDDING", "embeddinggemma:latest"),
         "params": "308M",
         "disk_mb": 600,
         "license": "Gemma",

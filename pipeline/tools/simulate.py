@@ -11,6 +11,7 @@ from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
+from pipeline import logger as _logger
 
 _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 if _ENV_PATH.exists():
@@ -359,23 +360,21 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(message)s",
-        stream=sys.stderr,
-    )
+    log_path = _logger.setup(verbose=args.verbose)
+    try:
+        if not args.confirm:
+            print("ERROR: --confirm required. This will wipe the DB and replay from scratch.", file=sys.stderr)
+            return 2
 
-    if not args.confirm:
-        print("ERROR: --confirm required. This will wipe the DB and replay from scratch.", file=sys.stderr)
-        return 2
-
-    simulate(
-        db_path=Path(args.db), fetch_days=args.fetch_days, dedup_window=args.window,
-        skip_gmail=args.skip_gmail, skip_rss=args.skip_rss,
-        gmail_folder=args.folder, rss_do_fetch=not args.no_fetch,
-        tiers=_parse_tiers(args.tiers), t3_max_hamming=args.t3_hamming, t4_threshold=args.t4_threshold,
-    )
-    return 0
+        simulate(
+            db_path=Path(args.db), fetch_days=args.fetch_days, dedup_window=args.window,
+            skip_gmail=args.skip_gmail, skip_rss=args.skip_rss,
+            gmail_folder=args.folder, rss_do_fetch=not args.no_fetch,
+            tiers=_parse_tiers(args.tiers), t3_max_hamming=args.t3_hamming, t4_threshold=args.t4_threshold,
+        )
+        return 0
+    finally:
+        _logger.close(log_path)
 
 
 if __name__ == "__main__":

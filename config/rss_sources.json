@@ -5,42 +5,42 @@
       "id": "huggingface_blog",
       "display_name": "Hugging Face Blog",
       "url": "https://huggingface.co/blog/feed.xml",
-      "category": "ai_lab",
+      "category": "ai_research",
       "fetch_full": true
     },
     {
       "id": "openai_news",
       "display_name": "OpenAI News",
       "url": "https://openai.com/news/rss.xml",
-      "category": "ai_lab",
+      "category": "ai_products",
       "fetch_full": true
     },
     {
       "id": "hn_llm_50",
       "display_name": "HN: LLM (>=50 pts)",
       "url": "https://hnrss.org/newest?q=LLM&points=50",
-      "category": "aggregator",
+      "category": "tech_news",
       "fetch_full": true
     },
     {
       "id": "hn_ai_100",
-      "display_name": "HN: AI (>=100 pts)",
+      "display_name": "HN: AI",
       "url": "https://hnrss.org/newest?q=AI&points=100",
-      "category": "aggregator",
+      "category": "tech_news",
       "fetch_full": true
     },
     {
       "id": "hn_ai_jobs_30",
-      "display_name": "HN: AI jobs (>=30 pts)",
+      "display_name": "HN: AI jobs",
       "url": "https://hnrss.org/newest?q=AI+jobs&points=30",
-      "category": "aggregator",
+      "category": "startup",
       "fetch_full": true
     },
     {
       "id": "hn_ai_startup_30",
-      "display_name": "HN: AI startup (>=30 pts)",
+      "display_name": "HN: AI startup",
       "url": "https://hnrss.org/newest?q=AI+startup&points=30",
-      "category": "aggregator",
+      "category": "startup",
       "fetch_full": true
     },
     {
@@ -63,7 +63,7 @@
       "id": "planet_money",
       "display_name": "Planet Money (NPR)",
       "url": "https://feeds.npr.org/510289/podcast.xml",
-      "category": "economics_podcast",
+      "category": "economics",
       "note": "feed already includes full episode descriptions",
       "fetch_full": false
     },
@@ -85,14 +85,14 @@
       "id": "fortune",
       "display_name": "Fortune",
       "url": "https://fortune.com/feed/",
-      "category": "business_news",
+      "category": "economics",
       "fetch_full": true
     },
     {
       "id": "testing_catalog",
       "display_name": "Testing Catalog",
       "url": "https://www.testingcatalog.com/rss/",
-      "category": "ai_news",
+      "category": "ai_products",
       "fetch_full": true
     }
   ]

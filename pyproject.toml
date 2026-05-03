@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 digest = "pipeline.main:main"
+syndicate = "pipeline.orchestrator:main"
 
 [dependency-groups]
 dev = [

@@ -50,7 +50,7 @@ class OllamaError(RuntimeError):
 
 def _config(model_override: str | None = None) -> tuple[str, str]:
     url = (os.environ.get("OLLAMA_URL") or os.environ.get("OLLAMA_HOST") or DEFAULT_URL).rstrip("/")
-    model = model_override or os.environ.get("OLLAMA_EMBED_MODEL") or os.environ.get("OLLAMA_MODEL_QWEN") or DEFAULT_MODEL
+    model = model_override or os.environ.get("OLLAMA_EMBED_MODEL") or os.environ.get("OLLAMA_MODEL_QWEN_EMBEDDING") or DEFAULT_MODEL
     return url, model
 
 

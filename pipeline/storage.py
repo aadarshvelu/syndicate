@@ -14,12 +14,12 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-DEFAULT_DB_PATH = Path("db") / "news.db"
+DEFAULT_DB_PATH = Path("db") / "snapshot.db"
 
 # Tables only — runs first. Indexes that reference newer columns must wait
 # until _ensure_columns has had a chance to ALTER pre-migration tables.
@@ -316,7 +316,7 @@ class ItemStore:
             """
             SELECT id, title, content, is_html, cluster_id, date, source_id, source_channel
             FROM items
-            WHERE is_primary = 1 AND summary IS NULL AND content IS NOT NULL
+            WHERE is_primary = 1 AND summary IS NULL AND content IS NOT NULL AND content != ''
             ORDER BY COALESCE(date, fetched_at) ASC
             LIMIT ?
             """,
@@ -354,6 +354,25 @@ class ItemStore:
         ).fetchall()
         total = rows[0]["total"] + 1 if rows else 1  # +1 for the primary
         return [r["content"] for r in rows], total
+
+    def enriched_primary_items_for_date(self, target_date: date) -> list[sqlite3.Row]:
+        """Enriched primary items (summary set) for a specific UTC calendar date."""
+        date_str = target_date.isoformat()  # "2026-05-03"
+        return list(self.conn.execute(
+            """
+            SELECT i.id, i.title, i.teaser, i.summary, i.importance, i.category,
+                   i.url, i.source_id, i.date, i.image_url, i.cluster_id,
+                   CASE
+                     WHEN i.cluster_id IS NULL THEN 1
+                     ELSE (SELECT COUNT(*) FROM items c WHERE c.cluster_id = i.cluster_id)
+                   END AS cluster_size
+            FROM items i
+            WHERE i.is_primary = 1 AND i.summary IS NOT NULL
+              AND date(COALESCE(i.date, i.fetched_at)) = ?
+            ORDER BY i.importance DESC, COALESCE(i.date, i.fetched_at) DESC
+            """,
+            (date_str,),
+        ).fetchall())
 
     def commit(self) -> None:
         self.conn.commit()

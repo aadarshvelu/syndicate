@@ -5,7 +5,6 @@ generative model via its native /api/chat endpoint with structured output
 (format=json_schema). Same httpx+tenacity pattern as dedup/semantic.py.
 
 Swap model via OLLAMA_SUMMARIZE_MODEL env var or --model CLI flag.
-Default model: gemma4:latest. Fallback: qwen3.5:9b
 
 Future cloud provider: swap _ollama_chat() for an Anthropic/OpenAI call —
 the Pydantic schema (ItemSummary) and pipeline loop are provider-agnostic.

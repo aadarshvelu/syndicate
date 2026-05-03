@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 
+from pipeline import logger as _logger
 from pipeline.auth.gmail import session
 from pipeline.ingestion.imap import fetch_message, get_header, search_uids
 
@@ -20,12 +20,14 @@ def main() -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)-7s %(message)s",
-        stream=sys.stderr,
-    )
+    log_path = _logger.setup(verbose=args.verbose)
+    try:
+        return _run(args)
+    finally:
+        _logger.close(log_path)
 
+
+def _run(args) -> int:
     with session() as imap:
         typ, data = imap.select(f'"{args.folder}"', readonly=True)
         if typ != "OK":
