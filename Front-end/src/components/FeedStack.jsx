@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import NewsCard from './NewsCard'
 
-export default function FeedStack({ items, onCardRead }) {
+export default function FeedStack({ items, onCardRead, onExpand, sheetCard }) {
   const [history, setHistory] = useState([])
 
   const activeItems = useMemo(() => {
@@ -113,6 +113,7 @@ export default function FeedStack({ items, onCardRead }) {
 
   const visibleSlice = activeItems.slice(0, 3)
   const position = history.length + 1
+  const isSheetOpen = sheetCard !== null
 
   return (
     <div style={{ position: 'relative', height: '100%', background: '#F2F2F7' }}>
@@ -126,6 +127,8 @@ export default function FeedStack({ items, onCardRead }) {
             stackOffset={offset}
             onNext={next}
             onPrev={prev}
+            onExpand={onExpand}
+            isExpanded={isSheetOpen && offset === 0}
           />
         ))}
       </AnimatePresence>

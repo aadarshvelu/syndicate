@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Full bleed bg for maskable — OS clips to shape -->
+  <rect width="512" height="512" fill="#111114"/>
+  <!-- S centered in the 80% safe zone (approx 102–410 usable area) -->
+  <path d="M312 152C390 152 390 244 256 256C122 268 122 360 200 360"
+    stroke="#FA2D48" stroke-width="56" fill="none" stroke-linecap="round"/>
+</svg>

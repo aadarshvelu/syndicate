@@ -1,17 +1,20 @@
 import { useState, useEffect, useMemo } from 'react'
+import { AnimatePresence } from 'framer-motion'
 import AppShell from './components/AppShell'
 import LoadingScreen from './components/LoadingScreen'
 import BottomNav from './components/BottomNav'
 import FeedStack from './components/FeedStack'
 import ReadStack from './components/ReadStack'
+import FullArticleSheet from './components/FullArticleSheet'
 import { getAllItems, markRead } from './db/store'
 import { syncFeed, registerSyncListener, registerPeriodicSync } from './db/sync'
 
 export default function App() {
-  const [loading, setLoading]   = useState(true)
-  const [status, setStatus]     = useState('Fueling up the engine...')
-  const [tab, setTab]           = useState('unread')
-  const [items, setItems]       = useState([])
+  const [loading,   setLoading]   = useState(true)
+  const [status,    setStatus]    = useState('Fueling up the engine...')
+  const [tab,       setTab]       = useState('unread')
+  const [items,     setItems]     = useState([])
+  const [sheetCard, setSheetCard] = useState(null)
 
   const loadItems = async () => {
     const all = await getAllItems()
@@ -54,22 +57,25 @@ export default function App() {
 
       {!loading && (
         <div style={{ position: 'relative', height: '100%' }}>
-          {/* Feed area */}
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              bottom: 0,
-              padding: 0,
-            }}
-          >
+          {/* Feed area — stops above the BottomNav (68px height + 10px bottom + 10px gap) */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 88 }}>
             {tab === 'unread'
-              ? <FeedStack items={unread} onCardRead={handleRead} />
+              ? <FeedStack items={unread} onCardRead={handleRead} onExpand={setSheetCard} sheetCard={sheetCard} />
               : <ReadStack items={read} />
             }
           </div>
 
           <BottomNav active={tab} onChange={setTab} unreadCount={unread.length} />
+
+          {/* Sheet lives here — same stacking context as BottomNav, z-index 300 beats it */}
+          <AnimatePresence>
+            {sheetCard && (
+              <FullArticleSheet
+                card={sheetCard}
+                onClose={() => setSheetCard(null)}
+              />
+            )}
+          </AnimatePresence>
         </div>
       )}
     </AppShell>

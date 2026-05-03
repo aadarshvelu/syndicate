@@ -89,7 +89,7 @@ export default function FullArticleSheet({ card, onClose }) {
       exit={{ y: '100%' }}
       transition={{ type: 'spring', stiffness: 320, damping: 32, mass: 1 }}
       style={{
-        position: 'absolute', inset: 0, zIndex: 100,
+        position: 'absolute', inset: 0, zIndex: 300,
         background: '#FFFFFF', overflowY: 'auto', overflowX: 'hidden',
         borderRadius: 20,
       }}
