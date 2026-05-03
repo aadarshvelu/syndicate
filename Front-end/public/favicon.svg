@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Dark rounded square -->
+  <rect width="32" height="32" rx="7" fill="#111114"/>
+  <!-- Bold S lettermark — two-arc bezier spine, brand red -->
+  <path
+    d="M20 8C25 8 25 15 16 16C7 17 7 24 12 24"
+    stroke="#FA2D48"
+    stroke-width="3.8"
+    fill="none"
+    stroke-linecap="round"
+  />
+</svg>

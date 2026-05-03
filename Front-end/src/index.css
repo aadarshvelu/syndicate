@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #F2F2F7;
+  color: #000000;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+@keyframes kb-1 {
+  from { transform: scale(1.0) translate(0%, 0%); }
+  to   { transform: scale(1.08) translate(-2%, -1.5%); }
+}
+@keyframes kb-2 {
+  from { transform: scale(1.0) translate(2%, 1%); }
+  to   { transform: scale(1.06) translate(-1.5%, 0%); }
+}
+@keyframes kb-3 {
+  from { transform: scale(1.06) translate(-1.5%, 0.5%); }
+  to   { transform: scale(1.0) translate(2%, -1%); }
+}
+
+@keyframes progress-run {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
