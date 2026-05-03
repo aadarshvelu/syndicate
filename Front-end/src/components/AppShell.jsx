@@ -21,7 +21,7 @@ function StatusBar() {
         top: 0,
         left: 0,
         right: 0,
-        height: 54,
+        height: 44,
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'space-between',
@@ -91,8 +91,8 @@ function DynamicIsland() {
         top: 12,
         left: '50%',
         transform: 'translateX(-50%)',
-        width: 126,
-        height: 37,
+        width: 100,
+        height: 28,
         background: '#000',
         borderRadius: 20,
         zIndex: 30,
@@ -186,13 +186,12 @@ function IPhoneFrame({ children }) {
             style={{
               position: 'absolute',
               inset: 0,
-              top: 54,
-              bottom: 28,
+              top: 44,
+              bottom: 0,
             }}
           >
             {children}
           </div>
-          <HomeIndicator />
         </div>
       </div>
     </div>
@@ -205,7 +204,10 @@ export default function AppShell({ children }) {
   if (isDesktop) return <IPhoneFrame>{children}</IPhoneFrame>
 
   return (
-    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden' }}>
+    <div style={{
+      position: 'fixed', inset: 0, overflow: 'hidden',
+      paddingTop: 'env(safe-area-inset-top, 0px)',
+    }}>
       {children}
     </div>
   )
