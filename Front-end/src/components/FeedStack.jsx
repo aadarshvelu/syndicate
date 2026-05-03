@@ -134,8 +134,9 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard }) {
       </AnimatePresence>
 
       <div style={{
-        position: 'absolute', top: -20, right: 2,
-        fontSize: 11, color: '#AEAEB2', letterSpacing: '0.02em',
+        position: 'absolute', top: 10, right: 12, zIndex: 20,
+        fontSize: 11, color: 'rgba(0,0,0,0.28)', letterSpacing: '0.02em',
+        fontWeight: 500, pointerEvents: 'none',
       }}>
         {position} / {items.length}
       </div>

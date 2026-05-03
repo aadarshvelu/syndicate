@@ -5,7 +5,7 @@ const TABS = [
     id: 'unread',
     label: 'Unread',
     icon: (active) => (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" strokeWidth={active ? 2.1 : 1.7}
         strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 4h16v12H4z" />
@@ -17,7 +17,7 @@ const TABS = [
     id: 'read',
     label: 'Read',
     icon: (active) => (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" strokeWidth={active ? 2.1 : 1.7}
         strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 11l3 3L22 4" />
@@ -29,28 +29,28 @@ const TABS = [
 
 export default function BottomNav({ active, onChange, unreadCount = 0 }) {
   return (
-    <div style={{ position: 'absolute', bottom: 10, left: 14, right: 14, zIndex: 50, height: 68 }}>
+    <div style={{ position: 'absolute', bottom: 6, left: 0, right: 0, zIndex: 50, height: 54 }}>
 
       <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
         <defs>
           <filter id="nav-gooey" x="-20%" y="-60%" width="140%" height="220%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="blur" />
+            <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
             <feColorMatrix in="blur" mode="matrix"
               values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -10" result="gooey" />
           </filter>
         </defs>
       </svg>
 
-      {/* Glass shell */}
+      {/* Glass shell — borderRadius 20 matches the card */}
       <div style={{
-        position: 'absolute', inset: 0, borderRadius: 32,
-        background: 'rgba(255,255,255,0.72)',
+        position: 'absolute', inset: 0, borderRadius: 20,
+        background: 'rgba(255,255,255,0.80)',
         backdropFilter: 'blur(40px) saturate(180%)',
         WebkitBackdropFilter: 'blur(40px) saturate(180%)',
         border: '1px solid rgba(255,255,255,0.9)',
         boxShadow: `
           0 0 0 0.5px rgba(0,0,0,0.06),
-          0 4px 24px rgba(0,0,0,0.08),
+          0 4px 20px rgba(0,0,0,0.08),
           0 1px 2px rgba(0,0,0,0.05),
           inset 0 1px 0 rgba(255,255,255,1)
         `,
@@ -59,16 +59,16 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
       {/* Gooey pill */}
       <div style={{
         position: 'absolute', inset: 0, display: 'flex',
-        padding: '7px', filter: 'url(#nav-gooey)', pointerEvents: 'none',
+        padding: '5px', filter: 'url(#nav-gooey)', pointerEvents: 'none',
       }}>
         {TABS.map((tab) => (
-          <div key={tab.id} style={{ flex: 1, position: 'relative', borderRadius: 24 }}>
+          <div key={tab.id} style={{ flex: 1, position: 'relative', borderRadius: 14 }}>
             {active === tab.id && (
               <motion.div
                 layoutId="nav-pill"
                 transition={{ type: 'spring', stiffness: 420, damping: 32, mass: 0.9 }}
                 style={{
-                  position: 'absolute', inset: 0, borderRadius: 24,
+                  position: 'absolute', inset: 0, borderRadius: 14,
                   background: 'rgba(250,45,72,0.10)',
                 }}
               />
@@ -78,7 +78,7 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
       </div>
 
       {/* Buttons */}
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', padding: '7px' }}>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', padding: '5px' }}>
         {TABS.map((tab) => {
           const isActive = active === tab.id
           const showBadge = tab.id === 'unread' && unreadCount > 0
@@ -89,9 +89,9 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
               onClick={() => onChange(tab.id)}
               style={{
                 flex: 1, display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', gap: 3,
+                alignItems: 'center', justifyContent: 'center', gap: 2,
                 background: 'transparent', border: 'none', cursor: 'pointer',
-                borderRadius: 24, padding: 0,
+                borderRadius: 14, padding: 0,
                 WebkitTapHighlightColor: 'transparent', outline: 'none',
               }}
             >
@@ -123,7 +123,7 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
 
               <motion.span
                 animate={{ color: isActive ? '#FA2D48' : 'rgba(0,0,0,0.35)', fontWeight: isActive ? 650 : 400 }}
-                style={{ fontSize: 11, letterSpacing: '0.01em' }}
+                style={{ fontSize: 10, letterSpacing: '0.01em' }}
               >
                 {tab.label}
               </motion.span>

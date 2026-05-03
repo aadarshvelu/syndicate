@@ -57,8 +57,8 @@ export default function App() {
 
       {!loading && (
         <div style={{ position: 'relative', height: '100%' }}>
-          {/* Feed area — stops above the BottomNav (68px height + 10px bottom + 10px gap) */}
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 88 }}>
+          {/* Feed area — stops above the BottomNav (54px height + 6px bottom + 8px gap) */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 68 }}>
             {tab === 'unread'
               ? <FeedStack items={unread} onCardRead={handleRead} onExpand={setSheetCard} sheetCard={sheetCard} />
               : <ReadStack items={read} />
