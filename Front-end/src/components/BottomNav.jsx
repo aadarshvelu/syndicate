@@ -29,7 +29,7 @@ const TABS = [
 
 export default function BottomNav({ active, onChange, unreadCount = 0 }) {
   return (
-    <div style={{ position: 'absolute', bottom: 6, left: 0, right: 0, zIndex: 50, height: 54 }}>
+    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 50, height: 60 }}>
 
       <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
         <defs>
@@ -41,9 +41,9 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
         </defs>
       </svg>
 
-      {/* Glass shell — borderRadius 20 matches the card */}
+      {/* Glass shell — rounded top mirrors card's rounded bottom */}
       <div style={{
-        position: 'absolute', inset: 0, borderRadius: 20,
+        position: 'absolute', inset: 0, borderRadius: '20px 20px 0 0',
         background: 'rgba(255,255,255,0.80)',
         backdropFilter: 'blur(40px) saturate(180%)',
         WebkitBackdropFilter: 'blur(40px) saturate(180%)',
@@ -59,7 +59,7 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
       {/* Gooey pill */}
       <div style={{
         position: 'absolute', inset: 0, display: 'flex',
-        padding: '5px', filter: 'url(#nav-gooey)', pointerEvents: 'none',
+        padding: '5px 5px 0', filter: 'url(#nav-gooey)', pointerEvents: 'none',
       }}>
         {TABS.map((tab) => (
           <div key={tab.id} style={{ flex: 1, position: 'relative', borderRadius: 14 }}>
@@ -78,7 +78,7 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
       </div>
 
       {/* Buttons */}
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', padding: '5px' }}>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', padding: '5px 5px 0' }}>
         {TABS.map((tab) => {
           const isActive = active === tab.id
           const showBadge = tab.id === 'unread' && unreadCount > 0
