@@ -1,0 +1,117 @@
+{
+  "_comment": "Match patterns are case-insensitive regex tested against the From: header. Refine after inspecting actual sender addresses in your Gmail.",
+  "sources": [
+    {
+      "id": "the_batch",
+      "display_name": "The Batch",
+      "match_from_pattern": "@deeplearning\\.ai",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "the_neuron",
+      "display_name": "The Neuron",
+      "match_from_pattern": "theneurondaily\\.com",
+      "extractor": "default",
+      "frequency": "daily"
+    },
+    {
+      "id": "import_ai",
+      "display_name": "Import AI",
+      "match_from_pattern": "importai|jack.{0,3}clark",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "tldr_ai",
+      "display_name": "TLDR AI",
+      "match_from_pattern": "@tldrnewsletter\\.com|tldr\\.tech",
+      "extractor": "default",
+      "frequency": "daily"
+    },
+    {
+      "id": "gradient_ascent",
+      "display_name": "Gradient Ascent",
+      "match_from_pattern": "artofsaience|gradient.?ascent|sairam",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "ahead_of_ai",
+      "display_name": "Ahead of AI",
+      "match_from_pattern": "raschka|aheadof.?ai|magazine\\.sebastianraschka",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "normal_tech",
+      "display_name": "AI as Normal Technology",
+      "match_from_pattern": "normaltech\\.ai|normal.?tech",
+      "extractor": "default",
+      "frequency": "occasional"
+    },
+    {
+      "id": "interconnects_ai",
+      "display_name": "Interconnects AI",
+      "match_from_pattern": "interconnects\\.ai|natolambert|robotic@substack\\.com",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "anthropic",
+      "display_name": "Anthropic",
+      "match_from_pattern": "@anthropic\\.com",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "meta_ai",
+      "display_name": "Meta AI",
+      "match_from_pattern": "@meta\\.com|ai\\.meta\\.com",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "stanford_hai",
+      "display_name": "Stanford HAI",
+      "match_from_pattern": "hai\\.stanford\\.edu|stanford.*hai|hai-news",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "mit_tech_review",
+      "display_name": "MIT Technology Review",
+      "match_from_pattern": "@technologyreview\\.com",
+      "extractor": "default",
+      "frequency": "daily"
+    },
+    {
+      "id": "noahpinion",
+      "display_name": "Noahpinion",
+      "match_from_pattern": "noahpinion|noah[\\.\\-_ ]?smith",
+      "extractor": "default",
+      "frequency": "frequent"
+    },
+    {
+      "id": "deepmind",
+      "display_name": "DeepMind",
+      "match_from_pattern": "@deepmind\\.google|@deepmind\\.com|deepmind",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "stratechery",
+      "display_name": "Stratechery",
+      "match_from_pattern": "stratechery\\.com",
+      "extractor": "default",
+      "frequency": "weekly"
+    },
+    {
+      "id": "ai_supremacy",
+      "display_name": "AI Supremacy",
+      "match_from_pattern": "aisupremacy[+@]",
+      "extractor": "default",
+      "frequency": "frequent"
+    }
+  ]
+}

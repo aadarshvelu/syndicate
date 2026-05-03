@@ -1,0 +1,39 @@
+# Secrets — NEVER commit
+pipeline/auth/credentials.json
+pipeline/auth/token.json
+*.pem
+.env
+.env.local
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# uv
+uv.lock.bak
+
+# Generated data (until publish phase)
+data/
+pipeline_state/
+db/
+temp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
