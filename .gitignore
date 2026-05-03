@@ -30,6 +30,9 @@ db/
 temp/
 logs/
 
+# Front-end source db (IndexedDB helpers — not pipeline data)
+!Front-end/src/db/
+
 # IDE
 .vscode/
 .idea/
