@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import NewsCard from './NewsCard'
 
 export default function FeedStack({ items, onCardRead, onExpand, sheetCard }) {
@@ -18,9 +18,6 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard }) {
     onCardRead?.(current.id)
   }, [activeItems, onCardRead])
 
-  const prev = useCallback(() => {
-    setHistory((h) => h.slice(0, -1))
-  }, [])
 
   if (!items || items.length === 0) {
     return (
@@ -117,21 +114,18 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard }) {
 
   return (
     <div style={{ position: 'relative', height: '100%', background: '#F2F2F7' }}>
-      <AnimatePresence mode="popLayout">
-        {visibleSlice.map((card, offset) => (
-          <NewsCard
-            key={card.id}
-            card={card}
-            cardIndex={offset}
-            isTop={offset === 0}
-            stackOffset={offset}
-            onNext={next}
-            onPrev={prev}
-            onExpand={onExpand}
-            isExpanded={isSheetOpen && offset === 0}
-          />
-        ))}
-      </AnimatePresence>
+      {visibleSlice.map((card, offset) => (
+        <NewsCard
+          key={card.id}
+          card={card}
+          cardIndex={offset}
+          isTop={offset === 0}
+          stackOffset={offset}
+          onNext={next}
+          onExpand={onExpand}
+          isExpanded={isSheetOpen && offset === 0}
+        />
+      ))}
 
       <div style={{
         position: 'absolute', top: 10, right: 12, zIndex: 20,
