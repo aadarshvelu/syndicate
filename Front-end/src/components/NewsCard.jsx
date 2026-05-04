@@ -3,7 +3,7 @@ import { motion, useMotionValue, useTransform, animate } from 'framer-motion'
 import { useDrag } from '@use-gesture/react'
 
 const SWIPE_DIST = 55
-const SWIPE_VEL  = 0.35      // px/ms
+const SWIPE_VEL  = 0.35
 const ADVANCE_MS = 30_000
 const KB_NAMES   = ['kb-1', 'kb-2', 'kb-3']
 
@@ -69,18 +69,18 @@ export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, 
     onNext()
   }
 
+  // Drag bound only to hero area — content panel stays fully tappable
   const bind = useDrag(
     ({ movement: [mx, my], velocity: [vx, vy], last }) => {
       if (!last) {
         x.set(Math.min(mx, 28))
-        // Upward drags feel more connected (0.5), downward/sideways stay subtle (0.18)
         y.set(my < 0 ? my * 0.5 : my * 0.18)
         return
       }
 
       const swipedLeft  = mx < -SWIPE_DIST || vx < -SWIPE_VEL
       const swipedRight = mx >  SWIPE_DIST || vx >  SWIPE_VEL
-      const swipeUp     = (my < -40 || vy < -SWIPE_VEL) && Math.abs(my) > Math.abs(mx)
+      const swipeUp     = (my < -30 || vy < -SWIPE_VEL) && Math.abs(my) > Math.abs(mx) * 0.8
 
       if (swipedLeft) {
         setFlying(true)
@@ -107,7 +107,6 @@ export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, 
 
   return (
     <motion.div
-      {...bind()}
       style={{
         x, y, rotate,
         opacity:    isTop ? fade : st.opacity,
@@ -119,10 +118,8 @@ export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, 
         borderRadius: '0 0 20px 20px',
         overflow: 'hidden',
         background: '#FFFFFF',
-        cursor:        isTop ? 'grab' : 'default',
         pointerEvents: isTop ? 'auto' : 'none',
-        touchAction:   'none',
-        userSelect:    'none',
+        userSelect: 'none',
         boxShadow: '0 2px 20px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06)',
         willChange: 'transform',
       }}
@@ -147,8 +144,15 @@ export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, 
         </div>
       )}
 
-      {/* Hero */}
-      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '54%' }}>
+      {/* Hero — drag zone (swipe left/right/up) */}
+      <div
+        {...bind()}
+        style={{
+          position: 'absolute', top: 0, left: 0, right: 0, height: '54%',
+          touchAction: 'none',
+          cursor: isTop ? 'grab' : 'default',
+        }}
+      >
         {card.image_url ? (
           <img
             key={`img-${card.id}`}
@@ -176,14 +180,18 @@ export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, 
         )}
       </div>
 
-      {/* Content panel */}
-      <div style={{
-        position: 'absolute', top: '48%', left: 0, right: 0, bottom: 0,
-        background: '#FFFFFF', borderRadius: '18px 18px 0 0',
-        padding: '14px 18px 16px',
-        display: 'flex', flexDirection: 'column', gap: 7,
-        boxShadow: '0 -1px 0 rgba(0,0,0,0.04)',
-      }}>
+      {/* Content panel — tap anywhere to expand */}
+      <div
+        onClick={() => { if (isTop && !flying) onExpand(card) }}
+        style={{
+          position: 'absolute', top: '48%', left: 0, right: 0, bottom: 0,
+          background: '#FFFFFF', borderRadius: '18px 18px 0 0',
+          padding: '14px 18px 16px',
+          display: 'flex', flexDirection: 'column', gap: 7,
+          boxShadow: '0 -1px 0 rgba(0,0,0,0.04)',
+          cursor: isTop ? 'pointer' : 'default',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: cc }}>
             {CAT_LABEL(card.category)}
@@ -216,21 +224,17 @@ export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, 
           <span style={{ fontSize: 11, color: '#AEAEB2' }}>
             {new Date(card.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
           </span>
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onExpand(card) }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              fontSize: 12, fontWeight: 600, color: '#FFFFFF',
-              background: '#000000', border: 'none', borderRadius: 20,
-              padding: '5px 14px', cursor: 'pointer', letterSpacing: '-0.1px',
-            }}
-          >
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            fontSize: 12, fontWeight: 600, color: '#FFFFFF',
+            background: '#000000', borderRadius: 20,
+            padding: '5px 14px', letterSpacing: '-0.1px',
+          }}>
             Full story
             <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
               <path d="M6 9V3M3 6l3-3 3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-          </button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'center' }}>
