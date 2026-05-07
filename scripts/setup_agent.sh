@@ -54,6 +54,8 @@ cat > "$PLIST" << PLIST_EOF
         <string>${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HOME</key>
         <string>${HOME}</string>
+        <key>TWITTER_HEADLESS</key>
+        <string>true</string>
     </dict>
     <key>RunAtLoad</key>
     <false/>
