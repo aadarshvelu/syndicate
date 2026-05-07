@@ -1,0 +1,19 @@
+[
+  { "id": "sama",          "handle": "sama",          "name": "Sam Altman",        "category_hint": "ai_products",  "enabled": true },
+  { "id": "ylecun",        "handle": "ylecun",        "name": "Yann LeCun",        "category_hint": "ai_research",  "enabled": true },
+  { "id": "demishassabis", "handle": "demishassabis", "name": "Demis Hassabis",    "category_hint": "ai_research",  "enabled": true },
+  { "id": "gdb",           "handle": "gdb",           "name": "Greg Brockman",     "category_hint": "ai_products",  "enabled": true },
+  { "id": "emollick",      "handle": "emollick",      "name": "Ethan Mollick",     "category_hint": "ai_research",  "enabled": true },
+  { "id": "fchollet",      "handle": "fchollet",      "name": "Francois Chollet",  "category_hint": "ai_research",  "enabled": true },
+  { "id": "GaryMarcus",    "handle": "GaryMarcus",    "name": "Gary Marcus",       "category_hint": "ai_research",  "enabled": true },
+  { "id": "simonw",        "handle": "simonw",        "name": "Simon Willison",    "category_hint": "tech_news",    "enabled": true },
+  { "id": "swyx",          "handle": "swyx",          "name": "Shawn Wang",        "category_hint": "tech_news",    "enabled": true },
+  { "id": "dhh",           "handle": "dhh",           "name": "DHH",               "category_hint": "tech_news",    "enabled": true },
+  { "id": "levelsio",      "handle": "levelsio",      "name": "Pieter Levels",     "category_hint": "startup",      "enabled": true },
+  { "id": "paulg",         "handle": "paulg",         "name": "Paul Graham",       "category_hint": "startup",      "enabled": true },
+  { "id": "pmarca",        "handle": "pmarca",        "name": "Marc Andreessen",   "category_hint": "startup",      "enabled": true },
+  { "id": "naval",         "handle": "naval",         "name": "Naval Ravikant",    "category_hint": "startup",      "enabled": true },
+  { "id": "paulkrugman",   "handle": "paulkrugman",   "name": "Paul Krugman",      "category_hint": "economics",    "enabled": true },
+  { "id": "noahpinion",    "handle": "noahpinion",    "name": "Noah Smith",        "category_hint": "economics",    "enabled": true },
+  { "id": "RayDalio",      "handle": "RayDalio",      "name": "Ray Dalio",         "category_hint": "economics",    "enabled": true }
+]

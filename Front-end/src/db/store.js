@@ -1,6 +1,8 @@
 import { openDB } from './schema.js'
 
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000
+const LIKES_CAP     = 500
+const DECAY_LAMBDA  = 0.1   // half-life ~7 days
 
 function tx(db, mode) {
   return db.transaction('items', mode).objectStore('items')
@@ -53,6 +55,61 @@ export async function markRead(id) {
       putReq.onerror = () => reject(putReq.error)
     }
     getReq.onerror = () => reject(getReq.error)
+  })
+}
+
+export async function storeLike(card) {
+  const db = await openDB()
+  const t = db.transaction('likes', 'readwrite')
+  const store = t.objectStore('likes')
+
+  return new Promise((resolve, reject) => {
+    const addReq = store.add({ category: card.category, source: card.source, liked_at: Date.now() })
+    addReq.onsuccess = () => {
+      // Enforce cap — delete oldest entries beyond LIKES_CAP
+      const countReq = store.count()
+      countReq.onsuccess = () => {
+        const excess = countReq.result - LIKES_CAP
+        if (excess <= 0) return resolve()
+        const idx = store.index('liked_at')
+        const cursorReq = idx.openCursor()
+        let toDelete = excess
+        cursorReq.onsuccess = (e) => {
+          const cursor = e.target.result
+          if (!cursor || toDelete <= 0) return resolve()
+          cursor.delete()
+          toDelete--
+          cursor.continue()
+        }
+        cursorReq.onerror = () => resolve()
+      }
+      countReq.onerror = () => resolve()
+    }
+    addReq.onerror = () => reject(addReq.error)
+  })
+}
+
+export async function getPreferenceScores() {
+  const db = await openDB()
+  const store = db.transaction('likes', 'readonly').objectStore('likes')
+
+  return new Promise((resolve, reject) => {
+    const req = store.getAll()
+    req.onsuccess = () => {
+      const now = Date.now()
+      const categories = {}
+      const sources = {}
+
+      req.result.forEach(({ category, source, liked_at }) => {
+        const daysAgo = (now - liked_at) / 86_400_000
+        const weight = Math.exp(-DECAY_LAMBDA * daysAgo)
+        if (category) categories[category] = (categories[category] || 0) + weight
+        if (source)   sources[source]       = (sources[source]   || 0) + weight
+      })
+
+      resolve({ categories, sources })
+    }
+    req.onerror = () => reject(req.error)
   })
 }
 

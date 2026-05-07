@@ -77,6 +77,8 @@ _DEDUP_COLUMNS = (
     ("embedding", "BLOB"),
     ("image_url", "TEXT"),
     ("teaser", "TEXT"),
+    ("relation", "TEXT"),        # null | standalone | reaction
+    ("parent_item_id", "TEXT"),  # FK -> items.id, set when relation=reaction
 )
 
 
@@ -372,6 +374,50 @@ class ItemStore:
             ORDER BY i.importance DESC, COALESCE(i.date, i.fetched_at) DESC
             """,
             (date_str,),
+        ).fetchall())
+
+    def set_relation(
+        self,
+        item_id: str,
+        relation: str,
+        parent_item_id: str | None = None,
+    ) -> None:
+        self.conn.execute(
+            "UPDATE items SET relation=?, parent_item_id=? WHERE id=?",
+            (relation, parent_item_id, item_id),
+        )
+
+    def unlinked_twitter_items(self, days: int) -> list[sqlite3.Row]:
+        """Twitter items within window that have not yet been relation-linked."""
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+        return list(self.conn.execute(
+            """
+            SELECT id, source_id, source_channel, title, url, date, fetched_at,
+                   content, embedding
+            FROM items
+            WHERE source_channel = 'twitter'
+              AND relation IS NULL
+              AND COALESCE(date, fetched_at) >= ?
+            ORDER BY COALESCE(date, fetched_at) DESC
+            """,
+            (cutoff,),
+        ).fetchall())
+
+    def news_items_in_window(self, days: int) -> list[sqlite3.Row]:
+        """RSS/Gmail items within window for relation matching."""
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+        return list(self.conn.execute(
+            """
+            SELECT id, source_id, source_channel, title, url, date, fetched_at,
+                   content, embedding
+            FROM items
+            WHERE source_channel IN ('rss', 'gmail')
+              AND COALESCE(date, fetched_at) >= ?
+            ORDER BY COALESCE(date, fetched_at) DESC
+            """,
+            (cutoff,),
         ).fetchall())
 
     def commit(self) -> None:

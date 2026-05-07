@@ -1,15 +1,18 @@
 import { useState, useMemo, useCallback } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import NewsCard from './NewsCard'
 
-export default function FeedStack({ items, onCardRead, onExpand, sheetCard }) {
+export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filterCategory, onLike }) {
   const [history, setHistory] = useState([])
 
   const activeItems = useMemo(() => {
-    if (history.length === 0) return items
     const seen = new Set(history)
-    return items.filter((item) => !seen.has(item.id))
-  }, [items, history])
+    const remaining = items.filter((item) => !seen.has(item.id))
+    if (!filterCategory) return remaining
+    const matched = remaining.filter((i) => i.category === filterCategory)
+    const rest = remaining.filter((i) => i.category !== filterCategory)
+    return [...matched, ...rest]
+  }, [items, history, filterCategory])
 
   const next = useCallback(() => {
     const current = activeItems[0]
@@ -114,18 +117,30 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard }) {
 
   return (
     <div style={{ position: 'relative', height: '100%', background: '#F2F2F7' }}>
-      {visibleSlice.map((card, offset) => (
-        <NewsCard
-          key={card.id}
-          card={card}
-          cardIndex={offset}
-          isTop={offset === 0}
-          stackOffset={offset}
-          onNext={next}
-          onExpand={onExpand}
-          isExpanded={isSheetOpen && offset === 0}
-        />
-      ))}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={filterCategory ?? 'all'}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+          style={{ position: 'absolute', inset: 0 }}
+        >
+          {visibleSlice.map((card, offset) => (
+            <NewsCard
+              key={card.id}
+              card={card}
+              cardIndex={history.length + offset}
+              isTop={offset === 0}
+              stackOffset={offset}
+              onNext={next}
+              onExpand={onExpand}
+              isExpanded={isSheetOpen && offset === 0}
+              onLike={onLike}
+            />
+          ))}
+        </motion.div>
+      </AnimatePresence>
 
       <div style={{
         position: 'absolute', top: 10, right: 12, zIndex: 20,

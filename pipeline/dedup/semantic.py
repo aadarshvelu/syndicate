@@ -41,7 +41,7 @@ DEFAULT_THRESHOLD = 0.60
 EMBED_DTYPE = np.float32
 MAX_CHARS_FOR_EMBED = 4000
 EMBED_BATCH_SIZE = 8
-HTTP_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+HTTP_TIMEOUT = httpx.Timeout(180.0, connect=10.0)
 
 
 class OllamaError(RuntimeError):

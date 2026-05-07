@@ -1,5 +1,5 @@
 const DB_NAME = 'syndicate'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 let _db = null
 
@@ -20,6 +20,10 @@ export function openDB() {
       }
       if (!db.objectStoreNames.contains('meta')) {
         db.createObjectStore('meta', { keyPath: 'key' })
+      }
+      if (!db.objectStoreNames.contains('likes')) {
+        const likes = db.createObjectStore('likes', { keyPath: 'id', autoIncrement: true })
+        likes.createIndex('liked_at', 'liked_at')
       }
     }
 

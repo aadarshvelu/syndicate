@@ -34,6 +34,8 @@ class OrchestratorResult:
     ok: bool
     gmail: dict | None = None
     rss: dict | None = None
+    twitter: dict | None = None
+    relation: dict | None = None
     dedup: dict | None = None
     summarize: dict | None = None
     git: dict | None = None
@@ -87,6 +89,23 @@ def _print_summary(result: OrchestratorResult) -> None:
             f"failed={r['failed']}",
         ))
 
+    if result.twitter:
+        t = result.twitter
+        lines.append(row("Twitter", t,
+            f"fetched={t['fetched']}",
+            f"saved={t['saved']}",
+            f"skipped={t['skipped']}",
+            f"failed={t['failed']}",
+        ))
+
+    if result.relation:
+        r = result.relation
+        lines.append(row("Relation", r,
+            f"examined={r['examined']}",
+            f"standalone={r['standalone']}",
+            f"reactions={r['reactions']}",
+        ))
+
     if result.dedup:
         d = result.dedup
         methods = "  ".join(f"{k}={v}" for k, v in (d.get("method_counts") or {}).items())
@@ -138,6 +157,7 @@ def main() -> int:
     )
     parser.add_argument("--skip-gmail", action="store_true")
     parser.add_argument("--skip-rss", action="store_true")
+    parser.add_argument("--skip-twitter", action="store_true")
     parser.add_argument("--skip-git", action="store_true", help="Run pipeline but skip git export")
     parser.add_argument("--summarize-limit", type=int, default=_SUMMARIZE_LIMIT,
                         help=f"Max items to summarize per run (default {_SUMMARIZE_LIMIT})")
@@ -166,6 +186,7 @@ def main() -> int:
             db_path=args.db,
             skip_gmail=args.skip_gmail,
             skip_rss=args.skip_rss,
+            skip_twitter=args.skip_twitter,
             skip_dedup=False,
             skip_summarize=False,
             summarize_limit=args.summarize_limit,
@@ -199,6 +220,8 @@ def main() -> int:
             ok=not all_errors,
             gmail=pipeline_result.gmail,
             rss=pipeline_result.rss,
+            twitter=pipeline_result.twitter,
+            relation=pipeline_result.relation,
             dedup=pipeline_result.dedup,
             summarize=pipeline_result.summarize,
             git=git_d,

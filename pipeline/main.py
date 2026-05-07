@@ -18,6 +18,8 @@ from pipeline.AI.summarize import SummarizePipeline
 from pipeline.dedup.runner import DedupPipeline
 from pipeline.ingestion.gmail import GmailPipeline
 from pipeline.ingestion.rss import RssPipeline
+from pipeline.ingestion.twitter import TwitterPipeline
+from pipeline.relation.linker import RelationLinker
 from pipeline.storage import DEFAULT_DB_PATH
 
 log = logging.getLogger(__name__)
@@ -30,6 +32,8 @@ class DigestResult:
     ok: bool
     gmail: dict | None = None
     rss: dict | None = None
+    twitter: dict | None = None
+    relation: dict | None = None
     dedup: dict | None = None
     summarize: dict | None = None
     errors: list[str] = field(default_factory=list)
@@ -42,6 +46,7 @@ def run(
     db_path: Path | str = DEFAULT_DB_PATH,
     skip_gmail: bool = False,
     skip_rss: bool = False,
+    skip_twitter: bool = False,
     skip_dedup: bool = False,
     skip_summarize: bool = False,
     summarize_limit: int = 100,
@@ -52,6 +57,8 @@ def run(
     errors: list[str] = []
     gmail_d: dict | None = None
     rss_d: dict | None = None
+    twitter_d: dict | None = None
+    relation_d: dict | None = None
     dedup_d: dict | None = None
 
     if not skip_gmail:
@@ -83,6 +90,35 @@ def run(
         except Exception as exc:
             errors.append(f"rss crash: {type(exc).__name__}: {exc}")
             log.exception("RSS pipeline crashed")
+
+    if not skip_twitter:
+        log.info("--- Twitter ingestion ---")
+        try:
+            result = TwitterPipeline(db_path=db_path).run(days=days)
+            twitter_d = asdict(result)
+            if not result.ok:
+                errors.append(f"twitter: {result.errors}")
+            log.info(
+                "Twitter done: fetched=%d saved=%d skipped=%d failed=%d",
+                result.fetched, result.saved, result.skipped, result.failed,
+            )
+        except Exception as exc:
+            errors.append(f"twitter crash: {type(exc).__name__}: {exc}")
+            log.exception("Twitter pipeline crashed")
+
+    log.info("--- Relation linking ---")
+    try:
+        result = RelationLinker(db_path=db_path).run()
+        relation_d = asdict(result)
+        if not result.ok:
+            errors.append(f"relation: {result.errors}")
+        log.info(
+            "Relation done: examined=%d standalone=%d reactions=%d",
+            result.examined, result.standalone, result.reactions,
+        )
+    except Exception as exc:
+        errors.append(f"relation crash: {type(exc).__name__}: {exc}")
+        log.exception("Relation linker crashed")
 
     if not skip_dedup:
         log.info("--- Dedup (T1-T4) ---")
@@ -124,6 +160,8 @@ def run(
         ok=not errors,
         gmail=gmail_d,
         rss=rss_d,
+        twitter=twitter_d,
+        relation=relation_d,
         dedup=dedup_d,
         summarize=summarize_d,
         errors=errors,
@@ -137,6 +175,7 @@ def main() -> int:
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="SQLite path")
     parser.add_argument("--skip-gmail", action="store_true")
     parser.add_argument("--skip-rss", action="store_true")
+    parser.add_argument("--skip-twitter", action="store_true")
     parser.add_argument("--skip-dedup", action="store_true")
     parser.add_argument("--skip-summarize", action="store_true")
     parser.add_argument("--summarize-limit", type=int, default=100, help="Max items to summarize per run (default 100)")
@@ -155,6 +194,7 @@ def main() -> int:
             db_path=args.db,
             skip_gmail=args.skip_gmail,
             skip_rss=args.skip_rss,
+            skip_twitter=args.skip_twitter,
             skip_dedup=args.skip_dedup,
             skip_summarize=args.skip_summarize,
             summarize_limit=args.summarize_limit,
