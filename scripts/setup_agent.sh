@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-LABEL="tech.elyts.syndicate"
+LABEL="syndicate"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 RUNNER="$REPO/scripts/run_syndicate.sh"
 LOG_DIR="$REPO/logs"
