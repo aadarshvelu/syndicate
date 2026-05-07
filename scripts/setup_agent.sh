@@ -3,10 +3,10 @@
 # Requires sudo for pmset (wake scheduling).
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LABEL="tech.elyts.syndicate"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
-RUNNER="$REPO/run_syndicate.sh"
+RUNNER="$REPO/scripts/run_syndicate.sh"
 LOG_DIR="$REPO/logs"
 
 mkdir -p "$LOG_DIR"
@@ -62,8 +62,10 @@ cat > "$PLIST" << PLIST_EOF
 PLIST_EOF
 
 # ── Load agent ──────────────────────────────────────────────────────────────
-launchctl unload "$PLIST" 2>/dev/null || true
-launchctl load "$PLIST"
+DOMAIN="gui/$(id -u)"
+launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+launchctl bootstrap "$DOMAIN" "$PLIST"
+launchctl enable "$DOMAIN/$LABEL"
 echo "Agent loaded: $LABEL"
 
 # ── Schedule first upcoming wake ────────────────────────────────────────────

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$REPO/logs"
 LOG="$LOG_DIR/syndicate.log"
 
@@ -9,6 +9,9 @@ mkdir -p "$LOG_DIR"
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') START ===" >> "$LOG"
 
 cd "$REPO"
+
+# Strip launchd-injected OLLAMA_HOST=0.0.0.0 so .env's http://localhost:11434 wins.
+unset OLLAMA_HOST
 
 # Run pipeline
 "$HOME/.local/bin/uv" run syndicate >> "$LOG" 2>&1
