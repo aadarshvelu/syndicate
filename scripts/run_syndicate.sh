@@ -13,8 +13,8 @@ cd "$REPO"
 # Strip launchd-injected OLLAMA_HOST=0.0.0.0 so .env's http://localhost:11434 wins.
 unset OLLAMA_HOST
 
-# Run pipeline
-"$HOME/.local/bin/uv" run syndicate >> "$LOG" 2>&1
+# Run pipeline (headless Chrome for Twitter — no window needed in automated run)
+TWITTER_HEADLESS=true "$HOME/.local/bin/uv" run syndicate >> "$LOG" 2>&1
 
 echo "=== $(date '+%Y-%m-%d %H:%M:%S') DONE ===" >> "$LOG"
 

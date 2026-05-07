@@ -80,7 +80,8 @@ def setup(*, verbose: bool = False) -> Path:
 
     # Silence noisy third-party libraries
     for _noisy in ("readability", "readability.readability", "httpcore",
-                   "urllib3", "chardet", "charset_normalizer"):
+                   "urllib3", "chardet", "charset_normalizer",
+                   "playwright", "playwright._impl"):
         logging.getLogger(_noisy).setLevel(logging.WARNING)
 
     def _excepthook(exc_type, exc_value, exc_tb):
