@@ -107,6 +107,7 @@ def _ollama_chat(url: str, model: str, prompt: str, schema: dict) -> str:
             "format": schema,
             "stream": False,
             "think": False,  # disable Qwen3 chain-of-thought thinking tokens
+            "options": {"num_predict": -1},  # no output token cap — prompt guides length
         },
         timeout=HTTP_TIMEOUT,
     )
