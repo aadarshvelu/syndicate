@@ -138,9 +138,13 @@ export default function App() {
 
       const existing = await getAllItems()
       if (existing.length > 0) {
+        // Render cached items immediately, then force a fresh fetch — the
+        // 1hr throttle is intentionally bypassed here so every PWA launch /
+        // hard refresh actually pulls today's feed. visibilitychange below
+        // still uses the throttle so app-switching doesn't spam the CDN.
         setItems(sortItems(existing))
         setLoading(false)
-        syncFeed().then(loadItems)
+        syncFeed({ force: true }).then(loadItems)
       } else {
         setStatus('Fetching latest news…')
         await syncFeed({ force: true })
@@ -221,6 +225,14 @@ export default function App() {
     await loadItems()
   }
 
+  // Wired into pull-to-refresh on both stacks. Force-syncs the feed JSON
+  // (bypassing the 1hr throttle) then re-reads IndexedDB. Returns the
+  // promise so PTR components can keep their spinner up until done.
+  const handleRefresh = async () => {
+    await syncFeed({ force: true })
+    await loadItems()
+  }
+
   const handleLike = async (card) => {
     await storeLike(card)
     const updated = await getPreferenceScores()
@@ -241,8 +253,8 @@ export default function App() {
               : `calc(60px + env(safe-area-inset-bottom, 0px))`,
           }}>
             {tab === 'unread'
-              ? <FeedStack items={unread} onCardRead={handleRead} onExpand={setSheetCard} sheetCard={sheetCard} filterCategory={activeFilter} onLike={handleLike} onOpenReactions={setReactionModal} reactionModalOpen={reactionModal !== null} />
-              : <ReadStack items={read} />
+              ? <FeedStack items={unread} onCardRead={handleRead} onExpand={setSheetCard} sheetCard={sheetCard} filterCategory={activeFilter} onLike={handleLike} onOpenReactions={setReactionModal} reactionModalOpen={reactionModal !== null} onRefresh={handleRefresh} />
+              : <ReadStack items={read} onRefresh={handleRefresh} />
             }
           </div>
 

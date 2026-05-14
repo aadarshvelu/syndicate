@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import NewsCard from './NewsCard'
 import TweetCard from './TweetCard'
+import PullToRefresh from './PullToRefresh'
 
 // Pick the right card layout for an item.
 // ALL twitter items (standalone, scoop, and reaction-when-it-falls-through-to-feed)
@@ -11,7 +12,7 @@ function pickCard(item) {
   return NewsCard
 }
 
-export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filterCategory, onLike, onOpenReactions, reactionModalOpen }) {
+export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filterCategory, onLike, onOpenReactions, reactionModalOpen, onRefresh }) {
   const [history, setHistory] = useState([])
 
   // Build cluster_id → [reactions] map across ALL items (before any filtering).
@@ -72,20 +73,23 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filt
 
   if (!items || items.length === 0) {
     return (
-      <div style={{
-        height: '100%', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', gap: 8,
-        background: '#F2F2F7',
-      }}>
-        <span style={{ fontSize: 36 }}>📭</span>
-        <p style={{ margin: 0, fontSize: 15, color: '#6C6C70', fontWeight: 500 }}>No stories yet</p>
-        <p style={{ margin: 0, fontSize: 13, color: '#AEAEB2' }}>Check back later</p>
-      </div>
+      <PullToRefresh onRefresh={onRefresh} mode="static">
+        <div style={{
+          height: '100%', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 8,
+          background: '#F2F2F7',
+        }}>
+          <span style={{ fontSize: 36 }}>📭</span>
+          <p style={{ margin: 0, fontSize: 15, color: '#6C6C70', fontWeight: 500 }}>No stories yet</p>
+          <p style={{ margin: 0, fontSize: 13, color: '#AEAEB2' }}>Pull down to refresh</p>
+        </div>
+      </PullToRefresh>
     )
   }
 
   if (activeItems.length === 0) {
     return (
+      <PullToRefresh onRefresh={onRefresh} mode="static">
       <div style={{
         height: '100%', display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
@@ -156,6 +160,7 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filt
           </motion.div>
         )}
       </div>
+      </PullToRefresh>
     )
   }
 

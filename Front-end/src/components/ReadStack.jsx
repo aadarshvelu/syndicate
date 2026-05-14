@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import FullArticleSheet from './FullArticleSheet'
+import PullToRefresh from './PullToRefresh'
 
 const CAT_LABEL = (c) => (c || 'news').replace(/_/g, ' ')
 const CAT_COLORS = {
@@ -83,25 +84,29 @@ function ReadItem({ card, index, onOpen }) {
   )
 }
 
-export default function ReadStack({ items }) {
+export default function ReadStack({ items, onRefresh }) {
   const [expanded, setExpanded] = useState(null)
+  const scrollRef = useRef(null)
 
   if (!items || items.length === 0) {
     return (
-      <div style={{
-        height: '100%', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', gap: 8,
-        background: '#F2F2F7',
-      }}>
-        <span style={{ fontSize: 36 }}>📂</span>
-        <p style={{ margin: 0, fontSize: 15, color: '#6C6C70', fontWeight: 500 }}>Nothing read yet</p>
-      </div>
+      <PullToRefresh onRefresh={onRefresh} mode="static">
+        <div style={{
+          height: '100%', display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 8,
+          background: '#F2F2F7',
+        }}>
+          <span style={{ fontSize: 36 }}>📂</span>
+          <p style={{ margin: 0, fontSize: 15, color: '#6C6C70', fontWeight: 500 }}>Nothing read yet</p>
+        </div>
+      </PullToRefresh>
     )
   }
 
   return (
     <>
-      <div style={{
+      <PullToRefresh onRefresh={onRefresh} mode="scroll" scrollRef={scrollRef}>
+      <div ref={scrollRef} style={{
         height: '100%',
         overflowY: 'auto',
         background: '#F2F2F7',
@@ -136,6 +141,7 @@ export default function ReadStack({ items }) {
           ))}
         </div>
       </div>
+      </PullToRefresh>
 
       <AnimatePresence>
         {expanded && <FullArticleSheet card={expanded} onClose={() => setExpanded(null)} />}

@@ -402,7 +402,8 @@ class ItemStore:
         date_str = target_date.isoformat()  # "2026-05-03"
         return list(self.conn.execute(
             """
-            SELECT i.id, i.title, i.teaser, i.summary, i.importance, i.category,
+            SELECT i.id, i.title, i.teaser, i.summary, i.content,
+                   i.importance, i.category,
                    i.url, i.source_id, i.source_channel, i.date, i.image_url,
                    i.cluster_id, i.relation, i.parent_item_id, i.parent_cluster_id,
                    i.author, i.raw_meta,

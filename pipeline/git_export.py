@@ -82,6 +82,11 @@ def _row_to_dict(row: sqlite3.Row, source_map: dict[str, str]) -> dict:
         out["parent_cluster_id"] = row["parent_cluster_id"]
     if "author" in keys:
         out["author"] = row["author"]
+    # `content` is needed by the FE's TweetCard to render the original tweet
+    # text. RSS/Gmail items also have content but the news layout uses
+    # title/summary instead, so it's harmless to always include.
+    if "content" in keys:
+        out["content"] = row["content"]
     if "raw_meta" in keys and row["raw_meta"]:
         # raw_meta is JSON text in SQLite; expose as a dict in the feed.
         import json as _json
@@ -246,11 +251,26 @@ class GitExport:
                 log.warning("Could not parse %s: %s — will overwrite", abs_path, exc)
 
         rows = store.enriched_primary_items_for_date(d)
-        new_items = [
-            _row_to_dict(row, self._source_map)
-            for row in rows
-            if row["id"] not in existing_ids
-        ]
+        new_items: list[dict] = []
+        skipped_empty = 0
+        for row in rows:
+            if row["id"] in existing_ids:
+                continue
+            # Skip tweets with neither text nor image — these render as
+            # "(media-only post)" in the FE with no media to show, so they
+            # add only noise to the feed. RSS/Gmail items reach this code
+            # path with a populated summary already, so the channel guard
+            # keeps the filter narrow.
+            if (row["source_channel"] or "") == "twitter":
+                has_text  = bool((row["content"] or "").strip())
+                has_image = bool((row["image_url"] or "").strip())
+                if not has_text and not has_image:
+                    skipped_empty += 1
+                    continue
+            new_items.append(_row_to_dict(row, self._source_map))
+
+        if skipped_empty:
+            log.info("git export: %s — skipped %d empty tweet(s)", _date_file_path(d), skipped_empty)
 
         if not new_items:
             log.info("git export: %s — no new items", rel_path)
