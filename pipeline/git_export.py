@@ -57,7 +57,8 @@ def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
 
 
 def _row_to_dict(row: sqlite3.Row, source_map: dict[str, str]) -> dict:
-    return {
+    keys = row.keys() if hasattr(row, "keys") else []
+    out = {
         "id": row["id"],
         "cluster_id": row["cluster_id"],
         "cluster_size": row["cluster_size"],
@@ -71,6 +72,24 @@ def _row_to_dict(row: sqlite3.Row, source_map: dict[str, str]) -> dict:
         "date": row["date"],
         "image_url": row["image_url"],
     }
+    # New fields (Phase 1 of reactions-as-first-class plan): emit only when
+    # the SELECT returned them, so this works against rows from any caller.
+    if "source_channel" in keys:
+        out["source_channel"] = row["source_channel"]
+    if "relation" in keys:
+        out["relation"] = row["relation"]
+    if "parent_cluster_id" in keys:
+        out["parent_cluster_id"] = row["parent_cluster_id"]
+    if "author" in keys:
+        out["author"] = row["author"]
+    if "raw_meta" in keys and row["raw_meta"]:
+        # raw_meta is JSON text in SQLite; expose as a dict in the feed.
+        import json as _json
+        try:
+            out["raw_meta"] = _json.loads(row["raw_meta"])
+        except (_json.JSONDecodeError, TypeError):
+            pass
+    return out
 
 
 @dataclass

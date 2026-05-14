@@ -16,6 +16,7 @@ dependencies = [
     "numpy>=1.26",
     "pydantic>=2.0",
     "playwright>=1.44",
+    "dspy>=3.2.1",
 ]
 
 [project.scripts]
@@ -25,6 +26,7 @@ install-browsers = "pipeline.tools.install_browsers:main"
 
 [dependency-groups]
 dev = [
+    "jupyter>=1.1.1",
     "pytest>=8.0",
     "ruff>=0.6",
 ]

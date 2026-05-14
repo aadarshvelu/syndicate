@@ -1,18 +1,66 @@
 import { useState, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import NewsCard from './NewsCard'
+import TweetCard from './TweetCard'
 
-export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filterCategory, onLike }) {
+// Pick the right card layout for an item.
+// ALL twitter items (standalone, scoop, and reaction-when-it-falls-through-to-feed)
+// use the X-embed style. RSS/Gmail/anything else uses the news card layout.
+function pickCard(item) {
+  if (item.source_channel === 'twitter') return TweetCard
+  return NewsCard
+}
+
+export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filterCategory, onLike, onOpenReactions, reactionModalOpen }) {
   const [history, setHistory] = useState([])
+
+  // Build cluster_id → [reactions] map across ALL items (before any filtering).
+  // Used to attach reactions to parent cards.
+  const reactionsByCluster = useMemo(() => {
+    const map = new Map()
+    for (const it of items) {
+      if (it.relation === 'reaction' && it.parent_cluster_id) {
+        const list = map.get(it.parent_cluster_id) || []
+        list.push(it)
+        map.set(it.parent_cluster_id, list)
+      }
+    }
+    // Sort each cluster's reactions newest-first
+    for (const list of map.values()) {
+      list.sort((a, b) => new Date(b.date) - new Date(a.date))
+    }
+    return map
+  }, [items])
+
+  // Set of cluster_ids whose parent IS in the current (unread) feed.
+  // Used to hide reactions that already have a visible parent — they'll
+  // render as floating pills on the parent card instead.
+  const parentClustersInFeed = useMemo(() => {
+    const s = new Set()
+    for (const it of items) {
+      if (it.cluster_id && it.relation !== 'reaction') s.add(it.cluster_id)
+    }
+    return s
+  }, [items])
 
   const activeItems = useMemo(() => {
     const seen = new Set(history)
-    const remaining = items.filter((item) => !seen.has(item.id))
+    let remaining = items.filter((item) => !seen.has(item.id))
+
+    // Hide reactions whose parent is in the (unread) feed. When parent is
+    // read it falls out of `items` upstream (App.jsx filters by !is_read),
+    // so the reaction surfaces standalone — exactly the Phase 3a contract.
+    remaining = remaining.filter((it) => {
+      if (it.relation !== 'reaction') return true
+      if (!it.parent_cluster_id)      return true
+      return !parentClustersInFeed.has(it.parent_cluster_id)
+    })
+
     if (!filterCategory) return remaining
     const matched = remaining.filter((i) => i.category === filterCategory)
     const rest = remaining.filter((i) => i.category !== filterCategory)
     return [...matched, ...rest]
-  }, [items, history, filterCategory])
+  }, [items, history, filterCategory, parentClustersInFeed])
 
   const next = useCallback(() => {
     const current = activeItems[0]
@@ -113,7 +161,10 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filt
 
   const visibleSlice = activeItems.slice(0, 3)
   const position = history.length + 1
-  const isSheetOpen = sheetCard !== null
+  // "Expanded" means SOME blocking overlay is on top of the card — either the
+  // FullArticleSheet or the ReactionsModal. The top card pauses its 15-second
+  // auto-advance progress bar while this is true.
+  const isSheetOpen = sheetCard !== null || reactionModalOpen
 
   return (
     <div style={{ position: 'relative', height: '100%', background: '#F2F2F7' }}>
@@ -126,19 +177,32 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filt
           transition={{ duration: 0.18 }}
           style={{ position: 'absolute', inset: 0 }}
         >
-          {visibleSlice.map((card, offset) => (
-            <NewsCard
-              key={card.id}
-              card={card}
-              cardIndex={history.length + offset}
-              isTop={offset === 0}
-              stackOffset={offset}
-              onNext={next}
-              onExpand={onExpand}
-              isExpanded={isSheetOpen && offset === 0}
-              onLike={onLike}
-            />
-          ))}
+          {visibleSlice.map((card, offset) => {
+            const CardComponent = pickCard(card)
+            const reactions = reactionsByCluster.get(card.cluster_id) || []
+            return (
+              <CardComponent
+                key={card.id}
+                card={card}
+                cardIndex={history.length + offset}
+                isTop={offset === 0}
+                stackOffset={offset}
+                onNext={next}
+                onExpand={onExpand}
+                isExpanded={isSheetOpen && offset === 0}
+                onLike={onLike}
+                reactions={reactions}
+                onReactionClick={(reaction, idx) => {
+                  // Open the modal with the full reactions list for this cluster.
+                  onOpenReactions?.({
+                    reactions,
+                    parent: card,
+                    startIndex: idx ?? 0,
+                  })
+                }}
+              />
+            )
+          })}
         </motion.div>
       </AnimatePresence>
 

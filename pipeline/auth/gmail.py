@@ -35,11 +35,17 @@ def _load_env() -> tuple[str, str]:
 def connect() -> imaplib.IMAP4_SSL:
     user, pw = _load_env()
     log.info("Connecting to %s as %s", IMAP_HOST, user)
-    imap = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
+
+    try:
+        imap = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT, timeout=60)
+    except (TimeoutError, OSError) as e:
+        raise AuthError(f"IMAP connect timed out / failed: {e}") from e
     try:
         imap.login(user, pw)
     except imaplib.IMAP4.error as e:
         raise AuthError(f"IMAP login failed: {e}") from e
+    except (TimeoutError, OSError) as e:
+        raise AuthError(f"IMAP login timed out: {e}") from e
     log.info("IMAP login OK")
     return imap
 

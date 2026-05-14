@@ -1,81 +1,42 @@
-"""AI-powered item enrichment — teaser, summary, importance, category.
+"""AI-powered item enrichment — orchestrator for source-aware summarizers.
 
-Populates four DB columns on is_primary=1 items using a local Ollama
-generative model via its native /api/chat endpoint with structured output
-(format=json_schema). Same httpx+tenacity pattern as dedup/semantic.py.
+Configures a single LM via `pipeline.AI.lm.configure_lm()` (env-driven; today
+Ollama, swap provider in one place), then dispatches each item to the right
+`BaseSummarizer` subclass based on `source_channel`.
 
-Swap model via OLLAMA_SUMMARIZE_MODEL env var or --model CLI flag.
+Storage contract is unchanged: same four columns are written via
+`set_enrichment(teaser, summary, importance, category)`.
 
-Future cloud provider: swap _ollama_chat() for an Anthropic/OpenAI call —
-the Pydantic schema (ItemSummary) and pipeline loop are provider-agnostic.
-
-ENV:
-  OLLAMA_URL              default http://localhost:11434
-  OLLAMA_SUMMARIZE_MODEL  default gemma4:latest
+To add a new source: implement a subclass of `BaseSummarizer` and register it
+in `_build_summarizers()`.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
-import httpx
-from pydantic import BaseModel, Field, ValidationError
-from tenacity import (
-    before_sleep_log,
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
-
-from pipeline.clean import for_llm
+from pipeline.AI.base import BaseSummarizer, ItemSummary
+from pipeline.AI.lm import DEFAULT_OLLAMA_MODEL, configure_lm
+from pipeline.AI.rss_summarizer import RssSummarizer
+from pipeline.AI.twitter_summarizer import TwitterSummarizer
 from pipeline.storage import DEFAULT_DB_PATH, ItemStore, now_iso
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gemma4:latest"
-MAX_TOTAL_CHARS = 8_000
 COMMIT_EVERY = 10
-HTTP_TIMEOUT = httpx.Timeout(3000.0, connect=30.0)  # generative models can be slow
 
-# Only retry on network-level failures, not timeouts (slow model won't recover on retry).
-_NETWORK_ERRORS = (
-    httpx.NetworkError,
-    httpx.RemoteProtocolError,
-)
+# Backwards-compatible alias for callers that imported DEFAULT_MODEL from here.
+DEFAULT_MODEL = DEFAULT_OLLAMA_MODEL
 
-_CATEGORIES = ["ai_research", "ai_products", "economics", "policy", "startup", "world_news", "tech_news", "other"]
-
-# Flat schema — no $defs, no $ref. Ollama's format param requires a plain object schema.
-_OUTPUT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "key_facts": {"type": "array", "items": {"type": "string"}},
-        "teaser":    {"type": "string"},
-        "summary":   {"type": "string"},
-        "importance": {"type": "integer"},
-        "category":  {"type": "string", "enum": _CATEGORIES},
-    },
-    "required": ["key_facts", "teaser", "summary", "importance", "category"],
-}
-
-Category = Literal[
-    "ai_research", "ai_products", "economics",
-    "policy", "startup", "world_news", "tech_news", "other",
+__all__ = [
+    "SummarizePipeline",
+    "SummarizeResult",
+    "ItemSummary",
+    "DEFAULT_MODEL",
 ]
-
-
-class ItemSummary(BaseModel):
-    key_facts: list[str]
-    teaser: str
-    summary: str
-    importance: int = Field(ge=1, le=5)
-    category: Category
 
 
 @dataclass
@@ -90,70 +51,6 @@ class SummarizeResult:
     errors: list[str] = field(default_factory=list)
 
 
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=8),
-    retry=retry_if_exception_type(_NETWORK_ERRORS),
-    before_sleep=before_sleep_log(log, logging.WARNING),
-    reraise=True,
-)
-def _ollama_chat(url: str, model: str, prompt: str, schema: dict) -> str:
-    """POST to Ollama /api/chat with structured output. Returns raw JSON string."""
-    resp = httpx.post(
-        f"{url}/api/chat",
-        json={
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "format": schema,
-            "stream": False,
-            "think": False,  # disable Qwen3 chain-of-thought thinking tokens
-            "options": {"num_predict": -1},  # no output token cap — prompt guides length
-        },
-        timeout=HTTP_TIMEOUT,
-    )
-    log.debug("Ollama raw response: %s", resp.text[:500])
-    if resp.status_code == 404:
-        raise RuntimeError(
-            f"Model {model!r} not found on Ollama. Pull it: `ollama pull {model}`"
-        )
-    if resp.status_code >= 400:
-        raise RuntimeError(f"Ollama HTTP {resp.status_code}: {resp.text[:300]}")
-    content = resp.json()["message"]["content"]
-    # Strip markdown code fences some models wrap around JSON output
-    content = content.strip()
-    if content.startswith("```"):
-        content = content.split("\n", 1)[-1]
-        if content.endswith("```"):
-            content = content[: content.rfind("```")]
-    return content.strip()
-
-
-def _build_content(primary_content: str, member_contents: list[str]) -> str:
-    parts = [primary_content] + [m for m in member_contents if m]
-    if len(parts) == 1:
-        return parts[0][:MAX_TOTAL_CHARS]
-    budget = MAX_TOTAL_CHARS // len(parts)
-    return "\n\n---\n\n".join(p[:budget] for p in parts)[:MAX_TOTAL_CHARS]
-
-
-def _build_prompt(title: str, content: str, source_count: int) -> str:
-    lines = [
-        "You are a news analyst. Analyze the article and return a JSON object with these fields:",
-        "",
-        "key_facts: array of up to 8 verbatim facts extracted from the article (names, orgs, numbers, dates, key claims)",
-        "teaser: one compelling hook (≤150 chars) using the single most surprising fact",
-        "summary: ≤450 chars, inverted pyramid — most important first, then context; explain jargon once; include all key_facts",
-        "importance: integer 1-5 (5=major breaking news, 1=routine/minor)",
-        f"category: one of: {', '.join(_CATEGORIES)}",
-    ]
-    if title:
-        lines += ["", f"Article title: {title}"]
-    if source_count > 1:
-        lines += [f"Sources covering this story: {source_count}"]
-    lines += ["", "Article:", content]
-    return "\n".join(lines)
-
-
 class SummarizePipeline:
     def __init__(
         self,
@@ -161,36 +58,78 @@ class SummarizePipeline:
         model: str | None = None,
     ) -> None:
         self.db_path = Path(db_path)
-        self.model = (
-            model
-            or os.environ.get("OLLAMA_SUMMARIZE_MODEL")
-            or DEFAULT_MODEL
-        )
+        # `model` is a per-run override that wins over env vars in lm.configure_lm.
+        self.model_override = model
+
+    def _build_summarizers(self) -> dict[str, BaseSummarizer]:
+        """Map source_channel → summarizer instance.
+
+        Add new channels here. Sharing a class across channels (RSS + Gmail
+        both use RssSummarizer) is fine.
+        """
+        return {
+            "rss":     RssSummarizer(),
+            "gmail":   RssSummarizer(),
+            "twitter": TwitterSummarizer(),
+        }
 
     def run(self, *, limit: int = 100) -> SummarizeResult:
-        ollama_url = (
-            os.environ.get("OLLAMA_URL")
-            or os.environ.get("OLLAMA_HOST")
-            or "http://localhost:11434"
-        ).rstrip("/")
-
         result = SummarizeResult(started_at=now_iso())
+
+        # Configure the global LM ONCE before any predictor runs. The provider
+        # is selected by the AI_PROVIDER env var; today it's Ollama, tomorrow
+        # swap to anthropic/openai by changing the env (and key).
+        try:
+            configure_lm(model_override=self.model_override)
+        except Exception as exc:
+            result.ok = False
+            result.errors.append(f"configure_lm: {exc}")
+            log.exception("Failed to configure LM")
+            result.finished_at = now_iso()
+            return result
+
+        summarizers = self._build_summarizers()
 
         try:
             with ItemStore(self.db_path) as store:
                 items = store.items_needing_summary(limit=limit)
                 result.examined = len(items)
-                log.info("Summarize: %d items to process (model=%s)", result.examined, self.model)
+                log.info("Summarize: %d items to process", result.examined)
 
                 for i, row in enumerate(items):
                     item = dict(row)
-                    raw_content = item.get("content") or ""
-                    if not raw_content.strip():
+                    # raw_meta is stored as JSON text — parse it once here so
+                    # every summarizer sees a dict (and not a JSON string).
+                    rm = item.get("raw_meta")
+                    if isinstance(rm, str):
+                        try:
+                            item["raw_meta"] = json.loads(rm) if rm else {}
+                        except json.JSONDecodeError as exc:
+                            log.warning(
+                                "raw_meta JSON parse failed for %s (%s); using {}: %s",
+                                item.get("id", "?")[:8], type(exc).__name__,
+                                (rm or "")[:80],
+                            )
+                            item["raw_meta"] = {}
+                    elif rm is None:
+                        item["raw_meta"] = {}
+                    title_short = (item.get("title") or item.get("url") or "")[:60]
+
+                    # Reactions used to be short-circuited here (skip_reason='reaction').
+                    # That was wrong — it threw away useful content. They're now
+                    # first-class feed items: TwitterSummarizer skips the banter
+                    # classifier when item.relation == 'reaction' and goes straight
+                    # to summary, with the cluster link preserved via parent_cluster_id.
+
+                    channel = item.get("source_channel") or ""
+                    summarizer = summarizers.get(channel)
+                    if summarizer is None:
+                        log.warning(
+                            "[%d/%d] no summarizer registered for source_channel=%r; skipping %s",
+                            i + 1, result.examined, channel, title_short,
+                        )
                         result.skipped += 1
                         continue
-
-                    # Clean HTML for existing rows saved before normalize.py change
-                    primary_content = for_llm(raw_content, is_html=bool(item.get("is_html")))
 
                     cluster_id = item.get("cluster_id")
                     member_contents: list[str] = []
@@ -200,43 +139,64 @@ class SummarizePipeline:
                             cluster_id, exclude_id=item["id"]
                         )
 
-                    content = _build_content(primary_content, member_contents)
-                    prompt = _build_prompt(
-                        title=(item.get("title") or "").strip(),
-                        content=content,
-                        source_count=cluster_size,
-                    )
-
                     try:
-                        raw = _ollama_chat(ollama_url, self.model, prompt, _OUTPUT_SCHEMA)
-                        out = ItemSummary.model_validate(json.loads(raw))
-                    except (RuntimeError, json.JSONDecodeError, ValidationError) as exc:
+                        out = summarizer.summarize(
+                            item,
+                            cluster_size=cluster_size,
+                            member_contents=member_contents,
+                        )
+                    except Exception as exc:
+                        # predict_with_retry already retried network errors;
+                        # anything reaching here is unrecoverable for this item.
                         log.warning(
-                            "Failed for %r: %s",
-                            (item.get("title") or "")[:50], exc,
+                            "[%d/%d] %s crashed for %r: %s",
+                            i + 1, result.examined,
+                            type(summarizer).__name__, title_short, exc,
+                        )
+                        result.errors.append(
+                            f"{type(summarizer).__name__}({title_short}): {exc}"
                         )
                         result.skipped += 1
                         continue
 
-                    if not out.teaser or not out.summary:
+                    if out.skip_reason:
+                        # Permanent skip — persist the reason so we never
+                        # re-process this row (banter, empty_content, etc.).
+                        store.set_skip_reason(item["id"], out.skip_reason)
                         result.skipped += 1
                         continue
 
-                    importance = min(5, out.importance + 1) if cluster_size >= 3 else out.importance
+                    if out.summary is None:
+                        # Transient failure — leave the row alone, retry next run.
+                        result.skipped += 1
+                        continue
+
+                    summary_obj = out.summary
+
+                    if not summary_obj.teaser or not summary_obj.summary:
+                        log.warning(
+                            "[%d/%d] empty teaser/summary for %s; skipping",
+                            i + 1, result.examined, title_short,
+                        )
+                        result.skipped += 1
+                        continue
+
+                    importance = (
+                        min(5, summary_obj.importance + 1) if cluster_size >= 3 else summary_obj.importance
+                    )
 
                     store.set_enrichment(
                         item["id"],
-                        teaser=out.teaser[:150],
-                        summary=out.summary[:450],
+                        teaser=summary_obj.teaser,
+                        summary=summary_obj.summary,
                         importance=importance,
-                        category=out.category,
+                        category=summary_obj.category,
                     )
                     result.summarized += 1
                     log.info(
                         "[%d/%d] %s | imp=%d cat=%s",
                         i + 1, result.examined,
-                        (item.get("title") or "")[:60],
-                        importance, out.category,
+                        title_short, importance, summary_obj.category,
                     )
 
                     if (i + 1) % COMMIT_EVERY == 0:

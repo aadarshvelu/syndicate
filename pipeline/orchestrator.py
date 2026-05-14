@@ -14,6 +14,7 @@ if _ENV_PATH.exists():
     load_dotenv(_ENV_PATH)
 
 from pipeline import logger as _logger
+from pipeline.channel.telegram import TelegramNotifier
 from pipeline.git_export import GitExport
 from pipeline.main import run
 from pipeline.storage import DEFAULT_DB_PATH, now_iso
@@ -56,13 +57,17 @@ def _tick(ok: bool) -> str:
     return "✓" if ok else "✗"
 
 
-def _print_summary(result: OrchestratorResult) -> None:
+def format_summary(result: OrchestratorResult) -> str:
+    """Build the boxed run summary as a single string.
+
+    Shared between stdout (`_print_summary`) and the Telegram notifier so the
+    two never drift. Returns the text without a trailing newline.
+    """
     dur = _duration(result.started_at, result.finished_at)
     ts = result.finished_at[:19].replace("T", " ") + " UTC"
     status = "OK" if result.ok else "FAILED"
 
     lines = [
-        "",
         _SEP,
         f"  SYNDICATE  ·  {ts}  ·  {dur}  ·  {status}",
         _SEP,
@@ -145,9 +150,12 @@ def _print_summary(result: OrchestratorResult) -> None:
             lines.append(f"    • {e}")
         lines.append(_SEP)
 
-    lines.append("")
-    output = "\n".join(lines)
-    print(output)
+    return "\n".join(lines)
+
+
+def _print_summary(result: OrchestratorResult) -> None:
+    output = format_summary(result)
+    print("\n" + output + "\n")
     log.info("Run summary:\n%s", output)
 
 
@@ -229,6 +237,14 @@ def main() -> int:
         )
 
         _print_summary(result)
+
+        # Best-effort Telegram notify. Configured via TELEGRAM_BOT_TOKEN +
+        # TELEGRAM_CHAT_ID; silently skips when env not set, and never raises.
+        try:
+            TelegramNotifier().notify(result)
+        except Exception:
+            log.exception("Telegram notify crashed (swallowed)")
+
         return 0 if result.ok else 1
 
     finally:

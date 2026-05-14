@@ -63,8 +63,12 @@ export async function storeLike(card) {
   const t = db.transaction('likes', 'readwrite')
   const store = t.objectStore('likes')
 
+  // Reactions get half-weight so a single hot story doesn't flood future feeds
+  // via 5 reactions all inheriting its category.
+  const weight = card.relation === 'reaction' ? 0.5 : 1.0
+
   return new Promise((resolve, reject) => {
-    const addReq = store.add({ category: card.category, source: card.source, liked_at: Date.now() })
+    const addReq = store.add({ category: card.category, source: card.source, liked_at: Date.now(), weight })
     addReq.onsuccess = () => {
       // Enforce cap — delete oldest entries beyond LIKES_CAP
       const countReq = store.count()
@@ -100,9 +104,12 @@ export async function getPreferenceScores() {
       const categories = {}
       const sources = {}
 
-      req.result.forEach(({ category, source, liked_at }) => {
+      req.result.forEach(({ category, source, liked_at, weight: storedWeight }) => {
         const daysAgo = (now - liked_at) / 86_400_000
-        const weight = Math.exp(-DECAY_LAMBDA * daysAgo)
+        const timeDecay = Math.exp(-DECAY_LAMBDA * daysAgo)
+        // storedWeight is 1.0 for normal items, 0.5 for reactions (legacy
+        // rows lack the field — default to 1.0 so existing likes still count).
+        const weight = timeDecay * (typeof storedWeight === 'number' ? storedWeight : 1.0)
         if (category) categories[category] = (categories[category] || 0) + weight
         if (source)   sources[source]       = (sources[source]   || 0) + weight
       })

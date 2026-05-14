@@ -41,3 +41,7 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+.cladue
+cmd.md
+__dev__

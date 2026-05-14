@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import ReactionPillStack from './ReactionPills'
 
 const SWIPE_DIST = 45
 const SWIPE_UP   = 50    // px upward to trigger expand
@@ -80,7 +81,7 @@ const STACK = [
   { scale: 0.914, sty: 26, opacity: 0.46 },
 ]
 
-export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, onExpand, isExpanded, onLike }) {
+export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, onExpand, isExpanded, onLike, reactions = [], onReactionClick }) {
   const [tx,         setTx]         = useState(0)
   const [ty,         setTy]         = useState(0)
   const [flying,     setFlying]     = useState(false)
@@ -396,17 +397,6 @@ export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, 
           marginTop: 'auto',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              fontSize: 15, fontWeight: 400, color: '#1C1C1E',
-              background: 'transparent',
-              padding: '3px 10px', letterSpacing: '-0.1px', cursor: 'pointer',
-            }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                <path d="M5 3h14a1 1 0 0 1 1 1v17l-8-4-8 4V4a1 1 0 0 1 1-1z" stroke="#1C1C1E" strokeWidth="2" strokeLinejoin="round"/>
-              </svg>
-              Track
-            </div>
             {card.url && (
               <button
                 data-action="share"
@@ -455,6 +445,10 @@ export default function NewsCard({ card, cardIndex, isTop, stackOffset, onNext, 
           <div style={{ width: 32, height: 3.5, borderRadius: 2, background: 'rgba(60,60,67,0.14)' }} />
         </div>
       </div>
+
+      {/* Floating X-reaction pills (Phase 3b). Anchored bottom-right of the card.
+          Only renders when this news has reactions in the same feed. */}
+      <ReactionPillStack reactions={reactions} onPillClick={onReactionClick} />
     </div>
   )
 }

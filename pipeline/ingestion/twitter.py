@@ -22,7 +22,6 @@ import json
 import logging
 import os
 import platform
-import random
 import re
 import subprocess
 import time
@@ -168,9 +167,6 @@ def _kill_syndicate_chrome() -> None:
     time.sleep(1.5)
 
 
-def _jitter(lo: float = 1.5, hi: float = 4.0) -> None:
-    time.sleep(random.uniform(lo, hi))
-
 def _parse_tweet_date(dt_str: str) -> str:
     """Parse ISO datetime string from <time datetime="..."> -> ISO8601 UTC."""
     try:
@@ -286,9 +282,8 @@ async def _scrape_account(
     try:
         _step("Navigating to %s", url)
         try:
-            await page.goto(url, wait_until="networkidle", timeout=45000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
         except Exception:
-            # networkidle can time out on heavy pages - that's fine, content may still be there
             pass
         _step("Page loaded - current URL: %s", page.url)
 
@@ -355,25 +350,104 @@ async def _scrape_account(
                         _step("  skip [%d] outside %d-day window (%s)", i, lookback_days, date_iso)
                         continue
 
-                    # text
-                    text_el = article.locator('[data-testid="tweetText"]')
-                    if await text_el.count() == 0:
-                        log.debug("  skip [%d] no tweetText", i)
-                        continue
-                    text = (await text_el.inner_text()).strip()
-                    if text.startswith("RT @"):
+                    # text — quote-tweets nest 2 tweetText nodes (outer comment + quoted post)
+                    text_els = article.locator('[data-testid="tweetText"]')
+                    text_count = await text_els.count()
+                    main_text = (await text_els.nth(0).inner_text()).strip() if text_count > 0 else ""
+                    quoted_text = (await text_els.nth(1).inner_text()).strip() if text_count > 1 else ""
+                    if main_text.startswith("RT @"):
                         log.debug("  skip [%d] retweet", i)
                         continue
-                    if not text:
+
+                    # author — outer (commenter) and optional quoted poster.
+                    # User-Name's inner_text is multiline: "Display Name\nVerified...\n@handle\n·\n15h"
+                    # We pull the display name (first line) and the @handle (first line starting with @).
+                    # name_count > 1 signals a quote-tweet even when the quoted post is media-only.
+                    # NOTE: for reposts, name_els.nth(0) is the ORIGINAL poster (not the reposter),
+                    # because X renders the reposter only in the socialContext badge above.
+                    name_els = article.locator('[data-testid="User-Name"]')
+                    name_count = await name_els.count()
+                    author = source["name"]
+                    author_handle = ""
+                    if name_count > 0:
+                        raw = (await name_els.nth(0).inner_text()).strip()
+                        parts = [p.strip() for p in raw.split("\n") if p.strip()]
+                        author = parts[0] if parts else author
+                        author_handle = next(
+                            (p for p in parts if p.startswith("@") and len(p) > 1), ""
+                        )
+                    quoted_author = ""
+                    quoted_handle = ""
+                    if name_count > 1:
+                        raw = (await name_els.nth(1).inner_text()).strip()
+                        parts = [p.strip() for p in raw.split("\n") if p.strip()]
+                        quoted_author = parts[0] if parts else ""
+                        quoted_handle = next(
+                            (p for p in parts if p.startswith("@") and len(p) > 1), ""
+                        )
+                    is_quote = name_count > 1
+
+                    # repost — X shows "<name> reposted" in [data-testid="socialContext"]
+                    # at the top of the article. Same testid is also used for "Pinned",
+                    # "Replying to", etc., so we filter on the word "reposted".
+                    is_repost = False
+                    social_ctx = article.locator('[data-testid="socialContext"]')
+                    if await social_ctx.count() > 0:
+                        try:
+                            ctx_text = (await social_ctx.first.inner_text()).strip().lower()
+                            is_repost = "reposted" in ctx_text
+                        except Exception:
+                            pass
+
+                    # media — try in order:
+                    #   1. outer/quoted tweetPhoto img (native photos)
+                    #   2. <video> poster (video thumbnail; also used for GIFs)
+                    #   3. link card img (external article previews like openai.com posts)
+                    image_url = ""
+                    photos = article.locator('[data-testid="tweetPhoto"] img')
+                    if await photos.count() > 0:
+                        image_url = await photos.nth(0).get_attribute("src") or ""
+                    if not image_url:
+                        videos = article.locator("video")
+                        if await videos.count() > 0:
+                            image_url = await videos.nth(0).get_attribute("poster") or ""
+                    if not image_url:
+                        cards = article.locator('[data-testid^="card."] img')
+                        if await cards.count() > 0:
+                            image_url = await cards.nth(0).get_attribute("src") or ""
+
+                    # compose content. Attribution prefers @handle (what readers recognize),
+                    # falls back to display name, then to a generic marker.
+                    quoted_label = quoted_handle or (quoted_author if quoted_author else "")
+                    if quoted_text:
+                        attribution = f"{quoted_label} wrote:" if quoted_label else "Quoted:"
+                        text = f"{main_text}\n\n{attribution}\n> {quoted_text}".strip()
+                    elif is_quote:
+                        attribution = (
+                            f"{quoted_label} posted [media]" if quoted_label else "[quoted media]"
+                        )
+                        text = f"{main_text}\n\n{attribution}".strip() if main_text else attribution
+                    else:
+                        text = main_text
+
+                    if not text and not image_url:
+                        log.debug("  skip [%d] no text and no media", i)
                         continue
 
-                    # author
-                    name_el = article.locator('[data-testid="User-Name"]')
-                    author = source["name"]
-                    if await name_el.count() > 0:
-                        author = (await name_el.inner_text()).split("\n")[0].strip() or author
-
                     item = _tweet_to_item(tweet_url, text, date_iso, author, source)
+                    if author_handle:
+                        item["raw_meta"]["author_handle"] = author_handle
+                    if quoted_author:
+                        item["raw_meta"]["quoted_author"] = quoted_author
+                    if quoted_handle:
+                        item["raw_meta"]["quoted_handle"] = quoted_handle
+                    if is_quote:
+                        item["raw_meta"]["is_quote_tweet"] = True
+                    if is_repost:
+                        item["raw_meta"]["is_repost"] = True
+                        item["raw_meta"]["reposted_by"] = f"@{source['handle']}"
+                    if image_url:
+                        item["image_url"] = image_url
                     items.append(item)
                     _step("OK [%d/%d] %s  %s", len(items), max_tweets, date_iso[:10], tweet_url)
 
@@ -470,7 +544,10 @@ class TwitterPipeline:
                             await page.add_init_script(
                                 "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
                             )
-                        items = await _scrape_account(page, source, max_tweets, days)
+                        items = await asyncio.wait_for(
+                            _scrape_account(page, source, max_tweets, days),
+                            timeout=360,
+                        )
                         result.fetched += len(items)
 
                         if items:
@@ -484,10 +561,8 @@ class TwitterPipeline:
 
                     except Exception as exc:
                         result.failed += 1
-                        result.errors.append(f"@{source['handle']}: {exc}")
-                        log.error("Twitter: account @%s crashed: %s", source["handle"], exc)
-
-                    _jitter(2.0, 5.0)
+                        result.errors.append(f"@{source['handle']}: {type(exc).__name__}: {exc!r}")
+                        log.exception("Twitter: account @%s crashed", source["handle"])
 
                 _step("Closing browser...")
                 await context.close()

@@ -6,8 +6,10 @@ import BottomNav from './components/BottomNav'
 import FeedStack from './components/FeedStack'
 import ReadStack from './components/ReadStack'
 import FullArticleSheet from './components/FullArticleSheet'
+import ReactionsModal from './components/ReactionsModal'
 import { getAllItems, markRead, storeLike, getPreferenceScores } from './db/store'
 import { syncFeed, registerSyncListener, registerPeriodicSync } from './db/sync'
+import { devFixtures, DEV_FIXTURE_PREFIXES } from './dev/fixtures'
 
 const CAT_LABELS = {
   ai_research:  'AI Research',
@@ -116,6 +118,8 @@ export default function App() {
   const [items,        setItems]        = useState([])
   const [sheetCard,    setSheetCard]    = useState(null)
   const [activeFilter, setActiveFilter] = useState(null)
+  // Reactions modal state: { reactions, parent, startIndex } | null
+  const [reactionModal, setReactionModal] = useState(null)
 
   const loadItems = async () => {
     const all = await getAllItems()
@@ -126,6 +130,12 @@ export default function App() {
     if (screen.orientation?.lock) screen.orientation.lock('portrait').catch(() => {})
 
     async function init() {
+      // TEMP dev-mode: ?dev=tweets injects TweetCard validation fixtures.
+      //                ?dev=clear wipes them. Remove this block + src/dev/ when done.
+      const devFlag = new URLSearchParams(window.location.search).get('dev')
+      if (devFlag === 'tweets')      await handleDevInject()
+      else if (devFlag === 'clear')  await handleDevClear()
+
       const existing = await getAllItems()
       if (existing.length > 0) {
         setItems(sortItems(existing))
@@ -144,12 +154,54 @@ export default function App() {
     init()
   }, [])
 
+  // ─── Dev-mode helpers (temporary) ─────────────────────────────────────────
+
+  async function handleDevInject() {
+    try {
+      const { upsertItems } = await import('./db/store')
+      const items = devFixtures()
+      console.log(`[dev] preparing to inject ${items.length} fixture(s):`, items.map(i => i.id))
+      const inserted = await upsertItems(items)
+      console.log(`[dev] injected ${inserted}/${items.length} fixture(s) into IndexedDB ` +
+                  `(items already present are kept — they only insert on first visit)`)
+    } catch (err) {
+      console.error('[dev] inject FAILED:', err)
+    }
+  }
+
+  async function handleDevClear() {
+    const { openDB } = await import('./db/schema')
+    const db = await openDB()
+    const store = db.transaction('items', 'readwrite').objectStore('items')
+    const req = store.openCursor()
+    let deleted = 0
+    await new Promise((resolve) => {
+      req.onsuccess = (e) => {
+        const cursor = e.target.result
+        if (!cursor) return resolve()
+        const id = cursor.value.id || ''
+        if (DEV_FIXTURE_PREFIXES.some(p => id.startsWith(p))) {
+          cursor.delete()
+          deleted++
+        }
+        cursor.continue()
+      }
+      req.onerror = () => resolve()
+    })
+    console.log(`[dev] cleared ${deleted} fixture item(s) from IndexedDB`)
+  }
+
   const [scores, setScores] = useState({ categories: {}, sources: {} })
 
   useEffect(() => {
     getPreferenceScores().then(setScores)
   }, [])
 
+  // Phase 3f note: unread count works correctly as-is.
+  // - Reactions whose parent is UNREAD     → in `raw`, but filtered out by
+  //   FeedStack's reactionsByCluster check (they render as pills on parent).
+  // - Reactions whose parent has been READ → in `raw`, NOT filtered by
+  //   FeedStack (parent not in feed), surface as standalone tweet cards.
   const unread = useMemo(() => {
     const raw = items.filter((i) => !i.is_read)
     return [...raw].sort((a, b) => {
@@ -189,7 +241,7 @@ export default function App() {
               : `calc(60px + env(safe-area-inset-bottom, 0px))`,
           }}>
             {tab === 'unread'
-              ? <FeedStack items={unread} onCardRead={handleRead} onExpand={setSheetCard} sheetCard={sheetCard} filterCategory={activeFilter} onLike={handleLike} />
+              ? <FeedStack items={unread} onCardRead={handleRead} onExpand={setSheetCard} sheetCard={sheetCard} filterCategory={activeFilter} onLike={handleLike} onOpenReactions={setReactionModal} reactionModalOpen={reactionModal !== null} />
               : <ReadStack items={read} />
             }
           </div>
@@ -204,6 +256,18 @@ export default function App() {
               <FullArticleSheet
                 card={sheetCard}
                 onClose={() => setSheetCard(null)}
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Reactions carousel modal — z-index 350, above FullArticleSheet */}
+          <AnimatePresence>
+            {reactionModal && (
+              <ReactionsModal
+                reactions={reactionModal.reactions}
+                parent={reactionModal.parent}
+                startIndex={reactionModal.startIndex}
+                onClose={() => setReactionModal(null)}
               />
             )}
           </AnimatePresence>

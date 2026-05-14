@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd plist for the stale-run cleaner. Fires at 06:00 and 18:00 IST,
+  sitting between the two syndicate.plist runs (11:59 and 23:59).
+
+  Install:
+    cp scripts/syndicate.cleaner.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/syndicate.cleaner.plist
+
+  Verify scheduled:
+    launchctl list | grep syndicate.cleaner
+
+  Run on demand (e.g. to test):
+    launchctl start syndicate.cleaner
+
+  Uninstall:
+    launchctl unload -w ~/Library/LaunchAgents/syndicate.cleaner.plist
+    rm ~/Library/LaunchAgents/syndicate.cleaner.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>syndicate.cleaner</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/aveey/srcs/syndicate/scripts/clean_stale_runs.sh</string>
+    </array>
+
+    <!-- 06:00 and 18:00 in system local time (IST). Spaces evenly between
+         the two syndicate.plist runs at 11:59 and 23:59. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>6</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>18</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/aveey/srcs/syndicate/logs/cleaner_agent.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/aveey/srcs/syndicate/logs/cleaner_agent.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/aveey/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/aveey</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

@@ -106,20 +106,10 @@ def run(
             errors.append(f"twitter crash: {type(exc).__name__}: {exc}")
             log.exception("Twitter pipeline crashed")
 
-    log.info("--- Relation linking ---")
-    try:
-        result = RelationLinker(db_path=db_path).run()
-        relation_d = asdict(result)
-        if not result.ok:
-            errors.append(f"relation: {result.errors}")
-        log.info(
-            "Relation done: examined=%d standalone=%d reactions=%d",
-            result.examined, result.standalone, result.reactions,
-        )
-    except Exception as exc:
-        errors.append(f"relation crash: {type(exc).__name__}: {exc}")
-        log.exception("Relation linker crashed")
-
+    # Dedup BEFORE RelationLinker so the linker sees finalized cluster ids
+    # and only matches tweets against primary news rows. This is what makes
+    # tweet.parent_cluster_id a stable pointer (cluster ids are immutable once
+    # persisted by dedup; primary inside a cluster can shift on future runs).
     if not skip_dedup:
         log.info("--- Dedup (T1-T4) ---")
         try:
@@ -136,6 +126,20 @@ def run(
         except Exception as exc:
             errors.append(f"dedup crash: {type(exc).__name__}: {exc}")
             log.exception("Dedup pipeline crashed")
+
+    log.info("--- Relation linking ---")
+    try:
+        result = RelationLinker(db_path=db_path).run()
+        relation_d = asdict(result)
+        if not result.ok:
+            errors.append(f"relation: {result.errors}")
+        log.info(
+            "Relation done: examined=%d standalone=%d reactions=%d",
+            result.examined, result.standalone, result.reactions,
+        )
+    except Exception as exc:
+        errors.append(f"relation crash: {type(exc).__name__}: {exc}")
+        log.exception("Relation linker crashed")
 
     summarize_d: dict | None = None
     if not skip_summarize:

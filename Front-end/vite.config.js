@@ -5,6 +5,11 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
   base: '/syndicate/',
+  // Allow Vite dev server to import from one level up (../__dev__/twitter_raw.json
+  // is consumed by src/dev/fixtures.js for the temp TweetCard validation surface).
+  server: {
+    fs: { allow: ['..'] },
+  },
   plugins: [
     react(),
     tailwindcss(),

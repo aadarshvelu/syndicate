@@ -78,7 +78,14 @@ _DEDUP_COLUMNS = (
     ("image_url", "TEXT"),
     ("teaser", "TEXT"),
     ("relation", "TEXT"),        # null | standalone | reaction
-    ("parent_item_id", "TEXT"),  # FK -> items.id, set when relation=reaction
+    ("parent_item_id", "TEXT"),  # FK -> items.id (audit/debug; the specific row matched at link time)
+    # null means "not yet summarized"; non-null means "permanently skipped" with reason.
+    # Gates items_needing_summary so banter/empty/reaction rows aren't re-processed.
+    ("summarize_skip_reason", "TEXT"),
+    # Cluster id of the matched news (the stable link, survives is_primary shifts and
+    # cluster re-shuffles). Used by export to resolve to the current primary of that cluster.
+    # null when no related news matched.
+    ("parent_cluster_id", "TEXT"),
 )
 
 
@@ -313,12 +320,27 @@ class ItemStore:
         )
 
     def items_needing_summary(self, *, limit: int = 100) -> list[sqlite3.Row]:
-        """Primary items that have no AI summary yet, oldest first."""
+        """Primary items that have no AI summary yet, oldest first.
+
+        Columns must include everything the source-aware summarizers and the
+        dispatcher in pipeline/AI/summarize.py read: image_url + raw_meta for
+        the Twitter vision path, relation/parent_item_id for the reaction
+        filter, and author for prompt context.
+        """
         return list(self.conn.execute(
             """
-            SELECT id, title, content, is_html, cluster_id, date, source_id, source_channel
+            SELECT id, title, content, is_html, cluster_id, date, fetched_at,
+                   source_id, source_channel, author, image_url, raw_meta,
+                   relation, parent_item_id
             FROM items
-            WHERE is_primary = 1 AND summary IS NULL AND content IS NOT NULL AND content != ''
+            WHERE is_primary = 1
+              AND summary IS NULL
+              AND summarize_skip_reason IS NULL
+              AND (
+                  (content IS NOT NULL AND content != '')
+                  OR (source_channel = 'twitter'
+                      AND image_url IS NOT NULL AND image_url != '')
+              )
             ORDER BY COALESCE(date, fetched_at) ASC
             LIMIT ?
             """,
@@ -337,6 +359,24 @@ class ItemStore:
         self.conn.execute(
             "UPDATE items SET teaser=?, summary=?, importance=?, category=? WHERE id=?",
             (teaser, summary, importance, category, item_id),
+        )
+
+    def set_skip_reason(self, item_id: str, reason: str | None) -> None:
+        """Mark an item as permanently skipped from summarization — or clear
+        an existing mark by passing reason=None.
+
+        Permanent skips (banter, empty content) are persisted so they don't
+        re-enter items_needing_summary on every pipeline run. Passing None
+        clears the column so the next run reconsiders the row — used when
+        the linker promotes a previously-banter tweet to a reaction (the
+        new code path will summarize it correctly).
+
+        Transient failures (LM parse error, network exhaustion) leave this
+        column null so the next run retries.
+        """
+        self.conn.execute(
+            "UPDATE items SET summarize_skip_reason=? WHERE id=?",
+            (reason, item_id),
         )
 
     def cluster_members_content(
@@ -363,7 +403,9 @@ class ItemStore:
         return list(self.conn.execute(
             """
             SELECT i.id, i.title, i.teaser, i.summary, i.importance, i.category,
-                   i.url, i.source_id, i.date, i.image_url, i.cluster_id,
+                   i.url, i.source_id, i.source_channel, i.date, i.image_url,
+                   i.cluster_id, i.relation, i.parent_item_id, i.parent_cluster_id,
+                   i.author, i.raw_meta,
                    CASE
                      WHEN i.cluster_id IS NULL THEN 1
                      ELSE (SELECT COUNT(*) FROM items c WHERE c.cluster_id = i.cluster_id)
@@ -381,14 +423,23 @@ class ItemStore:
         item_id: str,
         relation: str,
         parent_item_id: str | None = None,
+        parent_cluster_id: str | None = None,
     ) -> None:
         self.conn.execute(
-            "UPDATE items SET relation=?, parent_item_id=? WHERE id=?",
-            (relation, parent_item_id, item_id),
+            "UPDATE items SET relation=?, parent_item_id=?, parent_cluster_id=? WHERE id=?",
+            (relation, parent_item_id, parent_cluster_id, item_id),
         )
 
     def unlinked_twitter_items(self, days: int) -> list[sqlite3.Row]:
-        """Twitter items within window that have not yet been relation-linked."""
+        """Twitter items within window that need (re-)linking.
+
+        Two cohorts:
+          - relation IS NULL: never been touched by the linker (newly ingested)
+          - relation='standalone' AND parent_cluster_id IS NULL: was checked once
+            but no matching news existed then. Re-evaluate in case news has
+            arrived since. Once linked (parent_cluster_id IS NOT NULL) we
+            never reconsider — the link is stable.
+        """
         from datetime import datetime, timedelta, timezone
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
         return list(self.conn.execute(
@@ -397,23 +448,48 @@ class ItemStore:
                    content, embedding
             FROM items
             WHERE source_channel = 'twitter'
-              AND relation IS NULL
               AND COALESCE(date, fetched_at) >= ?
+              AND (
+                  relation IS NULL
+                  OR (relation = 'standalone' AND parent_cluster_id IS NULL)
+              )
             ORDER BY COALESCE(date, fetched_at) DESC
             """,
             (cutoff,),
         ).fetchall())
 
     def news_items_in_window(self, days: int) -> list[sqlite3.Row]:
-        """RSS/Gmail items within window for relation matching."""
+        """RSS/Gmail items within window for relation matching (all is_primary states)."""
         from datetime import datetime, timedelta, timezone
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
         return list(self.conn.execute(
             """
             SELECT id, source_id, source_channel, title, url, date, fetched_at,
-                   content, embedding
+                   content, embedding, cluster_id
             FROM items
             WHERE source_channel IN ('rss', 'gmail')
+              AND COALESCE(date, fetched_at) >= ?
+            ORDER BY COALESCE(date, fetched_at) DESC
+            """,
+            (cutoff,),
+        ).fetchall())
+
+    def news_primary_items_in_window(self, days: int) -> list[sqlite3.Row]:
+        """RSS/Gmail items within window — ONLY the primary copy of each cluster.
+
+        Used by RelationLinker (run after Dedup) so tweets link to the canonical
+        item in each cluster, not a soon-to-be-demoted duplicate. The returned
+        row includes cluster_id so the linker can store parent_cluster_id directly.
+        """
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+        return list(self.conn.execute(
+            """
+            SELECT id, source_id, source_channel, title, url, date, fetched_at,
+                   content, embedding, cluster_id
+            FROM items
+            WHERE source_channel IN ('rss', 'gmail')
+              AND is_primary = 1
               AND COALESCE(date, fetched_at) >= ?
             ORDER BY COALESCE(date, fetched_at) DESC
             """,

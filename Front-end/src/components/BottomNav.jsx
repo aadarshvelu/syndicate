@@ -28,8 +28,14 @@ const TABS = [
 ]
 
 export default function BottomNav({ active, onChange, unreadCount = 0 }) {
+  // Outer wraps the visible 60px row PLUS the iPhone safe-area below it, so
+  // the glass background extends under the home indicator and there's no
+  // gap between the content area (which uses `60 + safe-area`) and the nav.
   return (
-    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 50, height: 60 }}>
+    <div style={{
+      position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 50,
+      height: 'calc(60px + env(safe-area-inset-bottom, 0px))',
+    }}>
 
       <svg style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
         <defs>
@@ -41,7 +47,8 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
         </defs>
       </svg>
 
-      {/* Glass shell — rounded top mirrors card's rounded bottom */}
+      {/* Glass shell — fills the full 60+safe-area so iOS home indicator
+          sits over the blurred white, not over the page background. */}
       <div style={{
         position: 'absolute', inset: 0, borderRadius: '20px 20px 0 0',
         background: 'rgba(255,255,255,0.80)',
@@ -56,9 +63,10 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
         `,
       }} />
 
-      {/* Gooey pill */}
+      {/* Gooey pill — pinned to the top 60px so buttons aren't shifted down
+          by the safe-area extension. */}
       <div style={{
-        position: 'absolute', inset: 0, display: 'flex',
+        position: 'absolute', top: 0, left: 0, right: 0, height: 60, display: 'flex',
         padding: '5px 5px 0', filter: 'url(#nav-gooey)', pointerEvents: 'none',
       }}>
         {TABS.map((tab) => (
@@ -77,8 +85,8 @@ export default function BottomNav({ active, onChange, unreadCount = 0 }) {
         ))}
       </div>
 
-      {/* Buttons */}
-      <div style={{ position: 'absolute', inset: 0, display: 'flex', padding: '5px 5px 0' }}>
+      {/* Buttons — also pinned to the top 60px. */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 60, display: 'flex', padding: '5px 5px 0' }}>
         {TABS.map((tab) => {
           const isActive = active === tab.id
           const showBadge = tab.id === 'unread' && unreadCount > 0
