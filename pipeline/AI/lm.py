@@ -2,91 +2,81 @@
 
 All summarizers use whatever LM is configured here — swap provider in one place.
 
-Switch provider via the `AI_PROVIDER` env var:
+Env (provider-agnostic):
 
-  AI_PROVIDER=ollama       (default) — local via Ollama
-  AI_PROVIDER=anthropic    — Claude via Anthropic API (requires ANTHROPIC_API_KEY)
-  AI_PROVIDER=openai       — GPT via OpenAI API (requires OPENAI_API_KEY)
+  AI_PROVIDER       ollama (default) | anthropic | openai | gemini | minimax
+  SUMMARIZE_MODEL   provider-native model name (no prefix). Optional —
+                    falls back to a sensible per-provider default.
 
-To add a new provider: add a branch in `_build_lm()`. The `dspy.LM` constructor
-takes any LiteLLM-supported `model=...` string, so most providers are a one-liner.
+Provider credentials (only the one matching AI_PROVIDER is read):
 
-ENV (per provider):
+  OLLAMA_HOST       default http://localhost:11434
+  ANTHROPIC_API_KEY
+  OPENAI_API_KEY
+  GEMINI_API_KEY
+  MINIMAX_API_KEY
 
-  Ollama (default):
-    OLLAMA_HOST | OLLAMA_URL  default http://localhost:11434
-    OLLAMA_SUMMARIZE_MODEL    default gemma4:latest
-
-  Anthropic:
-    ANTHROPIC_API_KEY         required
-    ANTHROPIC_MODEL           default claude-sonnet-4-6
-
-  OpenAI:
-    OPENAI_API_KEY            required
-    OPENAI_MODEL              default gpt-4o
+Under the hood we hand a `<litellm-prefix>/<model>` string to dspy.LM,
+which DSPy passes through to LiteLLM. To add a new LiteLLM-supported
+provider, add a row in `_PROVIDERS`.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 
 import dspy
 
 log = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class _Provider:
+    litellm_prefix: str          # e.g. "ollama_chat", "anthropic", "openai"
+    default_model: str           # used if SUMMARIZE_MODEL unset
+    api_key_env: str | None      # None for ollama (local)
+
+
+_PROVIDERS: dict[str, _Provider] = {
+    "ollama":    _Provider("ollama_chat", "gemma4:latest",       None),
+    "anthropic": _Provider("anthropic",   "claude-sonnet-4-6",   "ANTHROPIC_API_KEY"),
+    "openai":    _Provider("openai",      "gpt-4o-mini",         "OPENAI_API_KEY"),
+    "gemini":    _Provider("gemini",      "gemini-2.0-flash",    "GEMINI_API_KEY"),
+    "minimax":   _Provider("minimax",     "abab6.5s-chat",       "MINIMAX_API_KEY"),
+}
+
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
-DEFAULT_OLLAMA_MODEL = "gemma4:latest"
-DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"
-DEFAULT_OPENAI_MODEL = "gpt-4o"
 
 
 def _build_lm(*, model_override: str | None = None) -> dspy.LM:
-    provider = os.getenv("AI_PROVIDER", "ollama").strip().lower()
-
-    if provider == "ollama":
-        host = (
-            os.getenv("OLLAMA_HOST")
-            or os.getenv("OLLAMA_URL")
-            or DEFAULT_OLLAMA_HOST
-        ).rstrip("/")
-        model = (
-            model_override
-            or os.getenv("OLLAMA_SUMMARIZE_MODEL")
-            or DEFAULT_OLLAMA_MODEL
+    name = os.getenv("AI_PROVIDER", "ollama").strip().lower()
+    spec = _PROVIDERS.get(name)
+    if spec is None:
+        supported = ", ".join(_PROVIDERS)
+        raise RuntimeError(
+            f"Unknown AI_PROVIDER={name!r}. Supported: {supported}."
         )
-        log.info("LM: ollama_chat/%s @ %s", model, host)
-        return dspy.LM(model=f"ollama_chat/{model}", api_base=host)
 
-    if provider == "anthropic":
-        model = (
-            model_override
-            or os.getenv("ANTHROPIC_MODEL")
-            or DEFAULT_ANTHROPIC_MODEL
-        )
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+    model = (model_override or os.getenv("SUMMARIZE_MODEL") or spec.default_model).strip()
+    full_model = f"{spec.litellm_prefix}/{model}"
+
+    kwargs: dict[str, object] = {}
+    if name == "ollama":
+        host = (os.getenv("OLLAMA_HOST") or DEFAULT_OLLAMA_HOST).rstrip("/")
+        kwargs["api_base"] = host
+        log.info("LM: %s @ %s", full_model, host)
+    else:
+        api_key = os.getenv(spec.api_key_env or "")
         if not api_key:
             raise RuntimeError(
-                "ANTHROPIC_API_KEY is required when AI_PROVIDER=anthropic"
+                f"{spec.api_key_env} is required when AI_PROVIDER={name}"
             )
-        log.info("LM: anthropic/%s", model)
-        return dspy.LM(model=f"anthropic/{model}", api_key=api_key)
+        kwargs["api_key"] = api_key
+        log.info("LM: %s", full_model)
 
-    if provider == "openai":
-        model = (
-            model_override
-            or os.getenv("OPENAI_MODEL")
-            or DEFAULT_OPENAI_MODEL
-        )
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("OPENAI_API_KEY is required when AI_PROVIDER=openai")
-        log.info("LM: openai/%s", model)
-        return dspy.LM(model=f"openai/{model}", api_key=api_key)
-
-    raise RuntimeError(
-        f"Unknown AI_PROVIDER={provider!r}. Supported: ollama, anthropic, openai."
-    )
+    return dspy.LM(model=full_model, **kwargs)
 
 
 def configure_lm(*, model_override: str | None = None) -> dspy.LM:

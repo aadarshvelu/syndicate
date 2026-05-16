@@ -1,0 +1,13 @@
+{
+  "name": "syndicate-pipeline",
+  "version": "0.1.0",
+  "description": "Run and diagnose the syndicate personal news digest pipeline from Claude Code.",
+  "author": {
+    "name": "Aadarsh velu",
+    "email": "aadarshvelu@gmail.com"
+  },
+  "homepage": "https://github.com/aadarshvelu/syndicate",
+  "repository": "https://github.com/aadarshvelu/syndicate.git",
+  "license": "MIT",
+  "keywords": ["news", "rss", "newsletter", "digest", "pipeline", "ollama", "twitter"]
+}

@@ -37,3 +37,30 @@ Fetches all feeds in `config/rss_sources.json`, optionally follows article URLs 
 uv run python -m pipeline.tools.smoke_rss --limit 3 -v
 uv run python -m pipeline.tools.smoke_rss --no-fetch
 ```
+
+## test_twitter.py — Twitter scraper smoke test
+
+Drives `TwitterPipeline` against the configured handles (or a custom
+list) and prints what would be inserted. No DB writes by default — pass
+`--save` to actually persist into `db/snapshot.db`. Use to verify the
+persistent Chrome profile + cookies after `setup_agent.sh`, or after
+X.com changes its DOM and you're updating selectors.
+
+```bash
+uv run python -m pipeline.tools.test_twitter
+uv run python -m pipeline.tools.test_twitter --handles karpathy simonw
+uv run python -m pipeline.tools.test_twitter --save
+```
+
+## install_browsers.py — Playwright browser install
+
+Thin wrapper that runs `playwright install chrome`. Exposed via the
+`install-browsers` script entrypoint in `pyproject.toml`, so the
+documented one-liner is:
+
+```bash
+uv run install-browsers
+```
+
+Run once after `uv sync` if you intend to use the Twitter pipeline.
+Skip otherwise — RSS/Gmail don't need a browser.

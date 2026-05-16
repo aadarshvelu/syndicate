@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 _INGEST_DAYS = 2
 _DEDUP_WINDOW = 10
-_SUMMARIZE_LIMIT = 50
+_SUMMARIZE_LIMIT = 100
 _W = 68
 _SEP = "═" * _W
 

@@ -22,6 +22,7 @@ dependencies = [
 [project.scripts]
 digest = "pipeline.main:main"
 syndicate = "pipeline.orchestrator:main"
+syndicate-cli = "pipeline.cli:main"
 install-browsers = "pipeline.tools.install_browsers:main"
 
 [dependency-groups]

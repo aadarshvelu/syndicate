@@ -112,6 +112,20 @@
       "match_from_pattern": "aisupremacy[+@]",
       "extractor": "default",
       "frequency": "frequent"
+    },
+    {
+      "id": "the_hill",
+      "display_name": "The Hill",
+      "match_from_pattern": "@thehill\\.com|thehill\\.com",
+      "extractor": "default",
+      "frequency": "daily"
+    },
+    {
+      "id": "marketplace",
+      "display_name": "Marketplace",
+      "match_from_pattern": "@marketplace\\.org|marketplace\\.org",
+      "extractor": "default",
+      "frequency": "daily"
     }
   ]
 }

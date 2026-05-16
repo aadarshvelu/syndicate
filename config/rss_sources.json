@@ -16,31 +16,10 @@
       "fetch_full": true
     },
     {
-      "id": "hn_llm_50",
-      "display_name": "HN: LLM (>=50 pts)",
-      "url": "https://hnrss.org/newest?q=LLM&points=50",
-      "category": "tech_news",
-      "fetch_full": true
-    },
-    {
       "id": "hn_ai_100",
       "display_name": "HN: AI",
       "url": "https://hnrss.org/newest?q=AI&points=100",
       "category": "tech_news",
-      "fetch_full": true
-    },
-    {
-      "id": "hn_ai_jobs_30",
-      "display_name": "HN: AI jobs",
-      "url": "https://hnrss.org/newest?q=AI+jobs&points=30",
-      "category": "startup",
-      "fetch_full": true
-    },
-    {
-      "id": "hn_ai_startup_30",
-      "display_name": "HN: AI startup",
-      "url": "https://hnrss.org/newest?q=AI+startup&points=30",
-      "category": "startup",
       "fetch_full": true
     },
     {
@@ -93,6 +72,55 @@
       "display_name": "Testing Catalog",
       "url": "https://www.testingcatalog.com/rss/",
       "category": "ai_products",
+      "fetch_full": true
+    },
+    {
+      "id": "techcrunch",
+      "display_name": "TechCrunch",
+      "url": "https://techcrunch.com/feed/",
+      "category": "tech_news",
+      "fetch_full": true
+    },
+    {
+      "id": "the_verge",
+      "display_name": "The Verge",
+      "url": "https://www.theverge.com/rss/index.xml",
+      "category": "tech_news",
+      "fetch_full": true
+    },
+    {
+      "id": "cnbc_top_news",
+      "display_name": "CNBC - Top News",
+      "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+      "category": "world_news",
+      "fetch_full": true
+    },
+    {
+      "id": "cnbc_business",
+      "display_name": "CNBC - Business",
+      "url": "https://www.cnbc.com/id/19854910/device/rss/rss.html",
+      "category": "economics",
+      "fetch_full": true
+    },
+    {
+      "id": "cnbc_tech",
+      "display_name": "CNBC - Technology",
+      "url": "https://www.cnbc.com/id/15839135/device/rss/rss.html",
+      "category": "tech_news",
+      "fetch_full": true
+    },
+    {
+      "id": "the_register",
+      "display_name": "The Register",
+      "url": "https://api.theregister.com/api/v1/article?orderBy=published&site_id=2&remapper=rss",
+      "category": "tech_news",
+      "fetch_full": true
+    },
+    {
+      "id": "siliconangle",
+      "display_name": "SiliconANGLE",
+      "url": "https://siliconangle.com/feed/",
+      "category": "tech_news",
       "fetch_full": true
     }
   ]

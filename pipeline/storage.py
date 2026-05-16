@@ -320,7 +320,15 @@ class ItemStore:
         )
 
     def items_needing_summary(self, *, limit: int = 100) -> list[sqlite3.Row]:
-        """Primary items that have no AI summary yet, oldest first.
+        """Primary items that have no AI summary yet, NEWEST FIRST.
+
+        Newest-first matters for two reasons:
+          1. Today's items get summarized today and land in today's export
+             JSON, surfacing fresh content in the PWA on the next run.
+          2. When ingestion outpaces summarize throughput (e.g. 50/run cap
+             vs 80 items/day arriving), the backlog naturally ages out —
+             stale RSS items from weeks ago don't block fresh news.
+        Old stragglers still get a chance once the fresh queue is empty.
 
         Columns must include everything the source-aware summarizers and the
         dispatcher in pipeline/AI/summarize.py read: image_url + raw_meta for
@@ -341,7 +349,7 @@ class ItemStore:
                   OR (source_channel = 'twitter'
                       AND image_url IS NOT NULL AND image_url != '')
               )
-            ORDER BY COALESCE(date, fetched_at) ASC
+            ORDER BY COALESCE(date, fetched_at) DESC
             LIMIT ?
             """,
             (limit,),

@@ -168,16 +168,25 @@ class GitExport:
             result.finished_at = now_iso()
             return result
 
+        # Window: last 4 days (today + 3 back). Two reasons:
+        #   1. handles up to a 3-day pipeline outage — when summarize finally
+        #      catches up, the older buckets still get exported (we hit this
+        #      on 2026-05-15 after the Gmail IMAP hang stalled 2 days of runs)
+        #   2. RSS/Gmail items often have a publish-date earlier than fetch,
+        #      so a story posted late on Monday but fetched Tuesday lands
+        #      in Monday's bucket — yesterday-only would have missed it
         today = datetime.now(timezone.utc).date()
-        yesterday = today - timedelta(days=1)
+        window_days = 4
+        dates = [today - timedelta(days=i) for i in range(window_days)]
 
         with ItemStore(self.db_path) as store:
-            today_count = self._write_date(store, today)
-            yesterday_count = self._write_date(store, yesterday)
+            counts = [self._write_date(store, d) for d in dates]
 
-        result.exported_today = today_count
-        result.exported_yesterday = yesterday_count
-        total_new = today_count + yesterday_count
+        # First two slots map to the existing exported_today / exported_yesterday
+        # fields so the orchestrator summary line keeps its shape.
+        result.exported_today = counts[0]
+        result.exported_yesterday = counts[1]
+        total_new = sum(counts)
 
         if total_new == 0:
             log.info("git export: no new items — skipping commit")

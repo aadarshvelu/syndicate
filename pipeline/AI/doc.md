@@ -42,8 +42,21 @@ The model must enumerate up to 8 verbatim facts (names, numbers, dates, key clai
 
 ## Model
 
-Default: `gemma4:latest`. Override via `OLLAMA_SUMMARIZE_MODEL` env var or `--model` flag.
-Server: `OLLAMA_URL` (default `http://localhost:11434`).
+Provider and model are provider-agnostic, configured via env:
+
+  AI_PROVIDER       ollama (default) | anthropic | openai | gemini | minimax
+  SUMMARIZE_MODEL   provider-native model name (no prefix). Falls back to a
+                    sensible per-provider default if unset.
+
+Per-provider creds (only the one matching AI_PROVIDER is read):
+
+  OLLAMA_HOST       default http://localhost:11434
+  ANTHROPIC_API_KEY · OPENAI_API_KEY · GEMINI_API_KEY · MINIMAX_API_KEY
+
+Under the hood `pipeline/AI/lm.py` constructs a `<litellm-prefix>/<model>`
+string and hands it to `dspy.LM`. To add a new LiteLLM-supported provider,
+add a row to `_PROVIDERS` in that file. The `--model` CLI flag overrides
+`SUMMARIZE_MODEL` for one run.
 
 ## Entrypoint
 

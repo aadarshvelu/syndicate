@@ -1,8 +1,8 @@
 """AI-powered item enrichment — orchestrator for source-aware summarizers.
 
-Configures a single LM via `pipeline.AI.lm.configure_lm()` (env-driven; today
-Ollama, swap provider in one place), then dispatches each item to the right
-`BaseSummarizer` subclass based on `source_channel`.
+Configures a single LM via `pipeline.AI.lm.configure_lm()` (env-driven —
+provider is selected by `AI_PROVIDER`), then dispatches each item to the
+right `BaseSummarizer` subclass based on `source_channel`.
 
 Storage contract is unchanged: same four columns are written via
 `set_enrichment(teaser, summary, importance, category)`.
@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pipeline.AI.base import BaseSummarizer, ItemSummary
-from pipeline.AI.lm import DEFAULT_OLLAMA_MODEL, configure_lm
+from pipeline.AI.lm import configure_lm
 from pipeline.AI.rss_summarizer import RssSummarizer
 from pipeline.AI.twitter_summarizer import TwitterSummarizer
 from pipeline.storage import DEFAULT_DB_PATH, ItemStore, now_iso
@@ -28,14 +28,10 @@ log = logging.getLogger(__name__)
 
 COMMIT_EVERY = 10
 
-# Backwards-compatible alias for callers that imported DEFAULT_MODEL from here.
-DEFAULT_MODEL = DEFAULT_OLLAMA_MODEL
-
 __all__ = [
     "SummarizePipeline",
     "SummarizeResult",
     "ItemSummary",
-    "DEFAULT_MODEL",
 ]
 
 
