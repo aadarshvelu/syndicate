@@ -16,12 +16,6 @@
   <a href="https://github.com/aadarshvelu/syndicate/stargazers"><img src="https://img.shields.io/github/stars/aadarshvelu/syndicate?style=flat-square&labelColor=black&color=ffcb47&logo=github" alt="Stars"/></a>
 </p>
 
-<p>
-  <code>/plugin marketplace add aadarshvelu/syndicate</code>
-  &nbsp;·&nbsp;
-  <code>/plugin install syndicate-pipeline@syndicate</code>
-</p>
-
 </div>
 
 <br />
