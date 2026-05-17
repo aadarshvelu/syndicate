@@ -91,6 +91,15 @@ export default function TweetCard({
   onLike,
   reactions = [],
   onReactionClick,
+  // Set true to skip the auto-advance progress bar entirely (used when the
+  // card is rendered in a sheet/modal where there's no "next card" to
+  // advance to — the bar would just sit there paused looking like a stray
+  // red line at the top).
+  hideProgress = false,
+  // Set true to skip the top-right heart button. Useful in read-only sheet
+  // contexts where double-tap-to-like wouldn't persist (no onLike handler),
+  // so the heart UI is misleading.
+  hideLike = false,
 }) {
   const [tx,        setTx]        = useState(0)
   const [ty,        setTy]        = useState(0)
@@ -257,7 +266,13 @@ export default function TweetCard({
   const isScoop = card.relation === 'standalone' && !!card.parent_cluster_id
 
   const { main, quoted, quotedAuthor } = useMemo(() => splitQuote(card.content || ''), [card.content])
-  const showMoreBtn = main.length > SHOW_MORE_THRESHOLD && !expanded
+  const isLong      = main.length > SHOW_MORE_THRESHOLD
+  const showMoreBtn = isLong && !expanded
+
+  // Advance time scales with reading effort: 2x for long content (so even
+  // without expanding the user has time to scan), and another 2x when they
+  // actually expand. So short=15s, long-collapsed=30s, long-expanded=60s.
+  const advanceMs = ADVANCE_MS * (isLong ? 2 : 1) * (expanded ? 2 : 1)
 
   const [gradA, gradB] = avatarGradient(authorHandle)
   const initial = avatarInitial(authorHandle, authorName)
@@ -299,18 +314,18 @@ export default function TweetCard({
       }}
     >
       {/* Auto-advance progress bar */}
-      {isTop && (
+      {isTop && !hideProgress && (
         <div style={{
           position: 'absolute', top: 0, left: 0, right: 0,
           height: 3, zIndex: 40, overflow: 'hidden',
           background: 'rgba(0,0,0,0.07)',
         }}>
           <div
-            key={`pb-${animKey}`}
+            key={`pb-${animKey}-${advanceMs}`}
             style={{
               height: '100%', background: '#FF3B30',
               transformOrigin: 'left',
-              animation: `progress-run ${ADVANCE_MS}ms linear forwards`,
+              animation: `progress-run ${advanceMs}ms linear forwards`,
               animationPlayState: playState,
             }}
             onAnimationEnd={safeNext}
@@ -318,21 +333,24 @@ export default function TweetCard({
         </div>
       )}
 
-      {/* Top-right heart (like) */}
-      <div style={{
-        position: 'absolute', top: 12, right: 12, zIndex: 20,
-        width: 32, height: 32, borderRadius: '50%',
-        background: 'rgba(0,0,0,0.32)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        backdropFilter: 'blur(6px)',
-      }}>
-        <svg width="16" height="16" viewBox="0 0 24 24">
-          {isLiked
-            ? <path fill="#FF3B30" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-            : <path fill="none" stroke="#fff" strokeWidth="2" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-          }
-        </svg>
-      </div>
+      {/* Top-right heart (like) — suppressed in sheet contexts where
+          double-tap doesn't persist anywhere */}
+      {!hideLike && (
+        <div style={{
+          position: 'absolute', top: 12, right: 12, zIndex: 20,
+          width: 32, height: 32, borderRadius: '50%',
+          background: 'rgba(0,0,0,0.32)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(6px)',
+        }}>
+          <svg width="16" height="16" viewBox="0 0 24 24">
+            {isLiked
+              ? <path fill="#FF3B30" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+              : <path fill="none" stroke="#fff" strokeWidth="2" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+            }
+          </svg>
+        </div>
+      )}
 
       {/* Center heart burst on double-tap */}
       {showHeart && (
@@ -355,7 +373,13 @@ export default function TweetCard({
           the feed and inside a reactions modal feels identical. */}
       <div style={{
         flex: 1,
-        display: 'flex', flexDirection: 'column', justifyContent: 'center',
+        display: 'flex', flexDirection: 'column',
+        // Short tweets get vertically centered (looks intentional on a
+        // mostly-empty card). Once the user expands a long tweet, switch to
+        // top-aligned so the body flows from the top and they can scroll
+        // straight through it. The previous always-center behaviour clipped
+        // both top and bottom of long expanded content.
+        justifyContent: expanded ? 'flex-start' : 'center',
         padding: '36px 16px 16px',
         overflow: 'auto',
         WebkitOverflowScrolling: 'touch',

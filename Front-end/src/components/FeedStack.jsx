@@ -211,8 +211,11 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filt
         </motion.div>
       </AnimatePresence>
 
+      {/* Stack-position counter. Anchored top-LEFT so it doesn't collide
+          with the top-right like button on TweetCard / NewsCard (both heart
+          buttons live at top:12, right:12 with zIndex:20). */}
       <div style={{
-        position: 'absolute', top: 10, right: 12, zIndex: 20,
+        position: 'absolute', top: 10, left: 14, zIndex: 20,
         fontSize: 11, color: 'rgba(0,0,0,0.28)', letterSpacing: '0.02em',
         fontWeight: 500, pointerEvents: 'none',
       }}>

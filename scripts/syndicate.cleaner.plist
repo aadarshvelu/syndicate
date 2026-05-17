@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  launchd plist for the stale-run cleaner. Fires at 06:00 and 18:00 IST,
-  sitting between the two syndicate.plist runs (11:59 and 23:59).
+  launchd plist for the stale-run cleaner. Fires at 09:00 and 21:00 IST.
+  These times sit ~9 hours after the most recent syndicate.plist run start
+  (23:59 → 09:00, 11:59 → 21:00), which is safely beyond the 8h hang
+  threshold in clean_stale_runs.sh. Earlier times (e.g. 06:00) would
+  intercept legitimately-long dedup runs and SIGTERM them mid-summarize.
 
-  Install:
+  Install / re-install after editing:
     cp scripts/syndicate.cleaner.plist ~/Library/LaunchAgents/
+    launchctl unload  ~/Library/LaunchAgents/syndicate.cleaner.plist 2>/dev/null
     launchctl load -w ~/Library/LaunchAgents/syndicate.cleaner.plist
 
   Verify scheduled:
@@ -29,19 +33,21 @@
         <string>/Users/aveey/srcs/syndicate/scripts/clean_stale_runs.sh</string>
     </array>
 
-    <!-- 06:00 and 18:00 in system local time (IST). Spaces evenly between
-         the two syndicate.plist runs at 11:59 and 23:59. -->
+    <!-- 09:00 and 21:00 in system local time (IST). Each fires ~9 hours
+         after the most recent syndicate.plist run start (23:59 / 11:59),
+         which is past the 8h hang threshold. Earlier times would kill
+         legitimately-slow runs mid-summarize. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict>
             <key>Hour</key>
-            <integer>6</integer>
+            <integer>9</integer>
             <key>Minute</key>
             <integer>0</integer>
         </dict>
         <dict>
             <key>Hour</key>
-            <integer>18</integer>
+            <integer>21</integer>
             <key>Minute</key>
             <integer>0</integer>
         </dict>

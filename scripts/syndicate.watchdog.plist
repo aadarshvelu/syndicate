@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd plist for the standalone freshness watchdog. Fires every 6 hours
+  (00:30, 06:30, 12:30, 18:30 IST) — offset 30 minutes after the natural
+  run-completion windows so a normal run has time to update the runs
+  table before the watchdog reads it.
+
+  This is independent of syndicate.plist and syndicate.cleaner.plist —
+  the whole point is to alert when those silently stop working.
+
+  Install:
+    cp scripts/syndicate.watchdog.plist ~/Library/LaunchAgents/
+    launchctl unload  ~/Library/LaunchAgents/syndicate.watchdog.plist 2>/dev/null
+    launchctl load -w ~/Library/LaunchAgents/syndicate.watchdog.plist
+
+  Verify scheduled:
+    launchctl list | grep syndicate.watchdog
+
+  Run on demand:
+    launchctl start syndicate.watchdog
+    # or: uv run python scripts/watchdog.py
+
+  Tune staleness threshold (default 24h):
+    set WATCHDOG_STALE_HOURS=12 in the env block below
+
+  Skip a channel (e.g. you're not using Twitter):
+    add WATCHDOG_SKIP_TWITTER=1 to the env block below
+
+  Uninstall:
+    launchctl unload -w ~/Library/LaunchAgents/syndicate.watchdog.plist
+    rm ~/Library/LaunchAgents/syndicate.watchdog.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>syndicate.watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/aveey/.local/bin/uv</string>
+        <string>run</string>
+        <string>python</string>
+        <string>/Users/aveey/srcs/syndicate/scripts/watchdog.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/aveey/srcs/syndicate</string>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/aveey/srcs/syndicate/logs/watchdog.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/aveey/srcs/syndicate/logs/watchdog.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/aveey/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/aveey</string>
+        <!-- Override defaults:
+        <key>WATCHDOG_STALE_HOURS</key><string>24</string>
+        <key>WATCHDOG_SKIP_TWITTER</key><string>1</string>
+        -->
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

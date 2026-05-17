@@ -64,3 +64,16 @@ add a row to `_PROVIDERS` in that file. The `--model` CLI flag overrides
 uv run python -m pipeline.AI.summarize_pipeline --limit 50
 uv run python -m pipeline.AI.summarize_pipeline --limit 5 --model qwen3.5:9b
 ```
+
+## Failure handling
+
+The summarize loop has two independent bail conditions so a sick
+provider can't waste an entire `--limit 100` run:
+
+| Mechanism | Trigger | Effect |
+|---|---|---|
+| **Circuit breaker** | 5 consecutive items raise a provider-shaped error (name matches `APIConnectionError`, `Timeout`, `ServiceUnavailableError`, etc.) | Stop iterating, mark remaining items skipped with no `skip_reason` set, log `circuit_breaker: N consecutive <ExcType>; M item(s) deferred` to errors. Counter resets on any successful call (including `skip_reason=banter`) — per-item parse errors (`ValueError` etc.) never trip the breaker |
+| **Wall-clock budget** | Elapsed time ≥ `BUDGET_SUMMARIZE_SEC` (default 3600s) | Checked before each item. On trip, remaining items are skipped without provider calls. Logged as `budget_exceeded: summarize <elapsed>s ≥ <budget>s; <remaining> item(s) deferred` |
+
+Both implementations live in [`summarize.py`](summarize.py). Deferred
+items keep `summary IS NULL` so the next run picks them up cleanly.

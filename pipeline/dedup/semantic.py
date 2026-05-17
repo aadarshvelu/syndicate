@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
@@ -233,3 +233,102 @@ def text_for_embedding(item: dict) -> str:
     content = (item.get("content") or "").strip()
     is_html = bool(item.get("is_html")) or ("<" in content and ">" in content)
     return for_embed(content, is_html=is_html, title=title)
+
+
+@dataclass
+class EnsureEmbeddingsResult:
+    """Outcome of ensure_recent_embeddings — small enough to log inline."""
+    ok: bool = True
+    examined: int = 0          # items in window
+    already_embedded: int = 0
+    newly_embedded: int = 0
+    failed: int = 0
+    errors: list[str] = field(default_factory=list)
+
+
+def ensure_recent_embeddings(store, *, days: int) -> EnsureEmbeddingsResult:
+    """Pre-compute embeddings for every item in the dedup window that lacks one.
+
+    Idempotent — items already embedded are skipped. Failures are captured
+    per-batch and don't raise; dedup's own encoding fallback path catches any
+    that this step missed.
+
+    The point of running this BEFORE dedup (instead of letting dedup encode
+    on the fly): if Ollama dies during encoding, only this stage fails, and
+    dedup can still cluster on T1/T2/T3 with whatever embeddings exist. Also
+    makes the embedding cost visible as its own stage in run logs instead of
+    hidden inside dedup wall time.
+    """
+    result = EnsureEmbeddingsResult()
+    try:
+        rows = store.items_in_window(days=days)
+    except Exception as exc:
+        result.ok = False
+        result.errors.append(f"items_in_window: {type(exc).__name__}: {exc}")
+        return result
+
+    result.examined = len(rows)
+    needs: list[tuple[str, str]] = []
+    for r in rows:
+        blob = r["embedding"] if "embedding" in r.keys() else None
+        if blob:
+            result.already_embedded += 1
+        else:
+            it = dict(r)
+            needs.append((it["id"], text_for_embedding(it)))
+
+    if not needs:
+        log.info(
+            "ensure_embeddings: %d items in %d-day window, all already embedded — skipping",
+            result.examined, days,
+        )
+        return result
+
+    from pipeline.budget import BudgetWatch
+    budget = BudgetWatch.for_stage("ensure_embeddings")
+    log.info(
+        "ensure_embeddings: %d/%d items in %d-day window need embedding (budget=%.0fs)",
+        len(needs), result.examined, days, budget.budget_seconds,
+    )
+
+    # Process in the same EMBED_BATCH_SIZE chunks the dedup runner uses so
+    # we get the same memory profile + per-batch failure granularity.
+    deferred = 0
+    for i in range(0, len(needs), EMBED_BATCH_SIZE):
+        if budget.exceeded():
+            deferred = len(needs) - i
+            budget.log_exceeded(remaining_items=deferred)
+            result.errors.append(
+                f"budget_exceeded: ensure_embeddings {budget.elapsed():.0f}s "
+                f">= {budget.budget_seconds:.0f}s; {deferred} item(s) deferred"
+            )
+            break
+        chunk = needs[i : i + EMBED_BATCH_SIZE]
+        ids = [iid for iid, _ in chunk]
+        texts = [t for _, t in chunk]
+        try:
+            vecs = embed_texts(texts)
+            for iid, vec in zip(ids, vecs):
+                store.set_embedding(iid, serialize(vec))
+                result.newly_embedded += 1
+            store.commit()
+        except Exception as exc:
+            result.failed += len(chunk)
+            result.errors.append(
+                f"batch {i // EMBED_BATCH_SIZE}: {type(exc).__name__}: {exc}"
+            )
+            log.warning(
+                "ensure_embeddings: batch %d (%d items) failed: %s",
+                i // EMBED_BATCH_SIZE, len(chunk), exc,
+            )
+            # Keep going — dedup will retry whatever's still missing.
+
+    log.info(
+        "ensure_embeddings done: examined=%d already=%d new=%d failed=%d deferred=%d",
+        result.examined, result.already_embedded, result.newly_embedded, result.failed, deferred,
+    )
+    if result.failed or deferred:
+        # Partial success is still OK as long as something got embedded
+        # (dedup will catch the rest on its own).
+        result.ok = result.newly_embedded > 0
+    return result

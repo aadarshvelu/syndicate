@@ -266,6 +266,7 @@ def _cmd_run(args: argparse.Namespace) -> Any:
         gmail=pipeline_result.gmail,
         rss=pipeline_result.rss,
         twitter=pipeline_result.twitter,
+        embed=pipeline_result.embed,
         relation=pipeline_result.relation,
         dedup=pipeline_result.dedup,
         summarize=pipeline_result.summarize,

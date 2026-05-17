@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
 # Kill syndicate processes that have been running too long (likely stuck on
-# IMAP / HTTP / Playwright). Runs from launchd at 6am and 6pm IST as a safety
+# IMAP / HTTP / Playwright). Runs from launchd at 9am and 9pm IST as a safety
 # net between the two scheduled pipeline runs (11:59 and 23:59).
 #
 # If launchd sees a syndicate process still alive when the next schedule
 # fires, the new instance is silently dropped — we hit a 32-hour hang on
 # 2026-05-13 from exactly that. This cleaner unblocks future schedules.
 #
-# Threshold: 4 hours of elapsed time. A normal pipeline run takes 1-2 hours,
-# so 4h is comfortable headroom while still catching real hangs.
+# Threshold: 8 hours of elapsed time. The dedup stage currently re-encodes
+# embeddings each run and routinely takes 3+ hours; combined with summarize
+# we see legitimate runs up to ~6h. 8h is headroom over that until the
+# embed-on-ingest refactor lands; drop back to 4h afterward.
+#
+# Schedule lives in ~/Library/LaunchAgents/syndicate.cleaner.plist and is
+# intentionally offset from run start times (23:59 → cleaner at 09:00 is
+# ~9h gap, 11:59 → cleaner at 21:00 is ~9h gap) so it never inspects a
+# run that's still inside its threshold.
 
 set -u
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="$REPO/logs/cleaner.log"
-THRESHOLD_SEC=14400      # 4 hours
+THRESHOLD_SEC=28800      # 8 hours
 
 mkdir -p "$(dirname "$LOG")"
 

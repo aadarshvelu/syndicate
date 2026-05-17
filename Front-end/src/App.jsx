@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import AppShell from './components/AppShell'
 import LoadingScreen from './components/LoadingScreen'
+import GuideOverlay, { shouldShowGuide } from './components/GuideOverlay'
 import BottomNav from './components/BottomNav'
 import FeedStack from './components/FeedStack'
 import ReadStack from './components/ReadStack'
@@ -114,6 +115,10 @@ function CategoryBar({ items, activeFilter, onFilterChange }) {
 export default function App() {
   const [loading,   setLoading]   = useState(true)
   const [status,    setStatus]    = useState('Fueling up the engine...')
+  // First-launch guide. Computed once at mount — once dismissed, the guide
+  // sets localStorage.isGuideShown='true' and shouldShowGuide() returns
+  // false for every future visit on this device.
+  const [showGuide, setShowGuide] = useState(() => shouldShowGuide())
   const [tab,       setTab]       = useState('unread')
   const [items,        setItems]        = useState([])
   const [sheetCard,    setSheetCard]    = useState(null)
@@ -242,6 +247,14 @@ export default function App() {
   return (
     <AppShell>
       <LoadingScreen visible={loading} status={status} />
+
+      {/* Quick-tour guide overlay — fires once on first launch (when
+          localStorage.isGuideShown is missing/false). Renders AFTER the
+          loading screen finishes so users see the brand reveal first,
+          then the gesture cheat sheet. */}
+      {!loading && showGuide && (
+        <GuideOverlay onDismiss={() => setShowGuide(false)} />
+      )}
 
       {!loading && (
         <div style={{ position: 'relative', height: '100%' }}>

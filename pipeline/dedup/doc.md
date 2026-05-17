@@ -8,7 +8,7 @@ Four-tier duplicate detection. Groups items into clusters and marks one per clus
 flowchart TD
     A["DedupPipeline.run()"] --> B["items_in_window(days) — storage.py"]
     B --> C["Pre-compute SimHashes — simhash.py"]
-    C --> D["Pre-compute embeddings — semantic.py"]
+    C --> D["Load cached embeddings<br/>(populated upstream by ensure_recent_embeddings)<br/>fallback: encode anything missing here"]
 
     D --> P1["PHASE 1: cluster unclustered items against each other"]
 
@@ -45,7 +45,30 @@ flowchart TD
 | `canon.py` | URL canonicalization (strip tracking params, unwrap wrappers); title normalization |
 | `priority.py` | `pick_primary` — official > aggregator > newsletter > unknown; tie-break on content length then date |
 | `simhash.py` | 64-bit 3-gram SimHash fingerprint; Hamming distance |
-| `semantic.py` | Ollama embedding via HTTP; cosine on L2-normalized vectors; blob serialize/deserialize |
+| `semantic.py` | Provider-agnostic embedding via env (`EMBEDDING_PROVIDER` / `EMBEDDING_MODEL`); cosine on L2-normalized vectors; blob serialize/deserialize. Exports `ensure_recent_embeddings(store, days)` which is the public entry point used by `pipeline/main.py` before dedup runs |
+
+## Embedding cost is paid upstream
+
+Historically dedup encoded missing embeddings inline at the start of its
+run, which routinely stretched dedup wall time to 3+ hours when many
+items needed encoding. The encoding now happens in a dedicated stage —
+`semantic.ensure_recent_embeddings(store, days=dedup_window)` — invoked
+by [`pipeline/main.py`](../main.py) between ingest and dedup.
+
+Benefits of pulling it out:
+
+- Dedup steady-state wall time drops to ~1 second on a 10-day window
+  with all embeddings cached.
+- A failing embedding provider is now an isolated stage failure with
+  its own log line — not an opaque dedup hang.
+- The ensure_embeddings stage has its own `BUDGET_ENSURE_EMBEDDINGS_SEC`
+  wall-clock cap (default 1800s) so it can bail gracefully on the next
+  batch boundary if the provider is misbehaving.
+
+DedupPipeline's runner still has a fallback path that encodes anything
+missing at dedup-time, so the system continues to work even if the
+upstream stage is skipped or fails partially. The fallback is just no
+longer the primary path.
 
 ## Cluster method labels
 

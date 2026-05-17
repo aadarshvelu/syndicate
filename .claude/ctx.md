@@ -19,9 +19,18 @@ uv run digest             # lower-level, all skip-* flags exposed
 ## Pipeline flow
 
 ```
-Gmail.run(days=2) → RSS.run(days=2) → Twitter.run(days=2)
-  → RelationLinker.run() → Dedup.run(window=10) → Summarize.run() → GitExport.run()
+[pre-flight GitExport — orphan summaries from prior runs]
+  → Gmail.run(days=2) → RSS.run(days=2) → Twitter.run(days=2)
+  → semantic.ensure_recent_embeddings(window=10)
+  → Dedup.run(window=10)
+  → RelationLinker.run()
+  → Summarize.run()
+  → [final GitExport in try/finally — runs even if pipeline crashed]
+  → TelegramNotifier.notify()
 ```
+
+Pre-flight + finally export = "PWA never sits on stale data because the
+last run died before reaching git push." See "Resilience patterns" below.
 
 ## Key files
 
@@ -29,7 +38,16 @@ Gmail.run(days=2) → RSS.run(days=2) → Twitter.run(days=2)
 pipeline/
   orchestrator.py          — syndicate entry; hardcoded days=2, dedup_window=10; table summary output
                              flags: --skip-gmail --skip-rss --skip-twitter --skip-git
+                             pre-flight + try/finally export (final export survives KeyboardInterrupt / SIGTERM)
   main.py                  — digest entry; all --skip-* flags
+                             wires ensure_recent_embeddings stage between ingest and dedup
+  cli.py                   — JSON-emitting per-stage CLI used by Claude Code skills
+                             subcommands: status, health, ingest-{gmail,rss,twitter}, link-relations,
+                                          dedup, summarize, export, run
+  status.py                — read-only snapshot for /syndicate-status and /syndicate-heal
+                             reads runs table for last_run_per_channel; checks ollama, disk, env
+  budget.py                — BudgetWatch.for_stage(label); env BUDGET_<LABEL>_SEC
+                             defaults: summarize=3600, ensure_embeddings=1800; 0 disables
   storage.py               — SQLite ItemStore; db/snapshot.db
                              columns: relation (null|standalone|reaction), parent_item_id FK
   logger.py                — logs/<date>.txt; IST+UTC timestamps; 7-day purge; session markers
@@ -53,9 +71,16 @@ pipeline/
                              window: 7 days; idempotent (skips relation IS NOT NULL)
   dedup/
     runner.py              — DedupPipeline; 4-tier + 2-phase
-    semantic.py            — Ollama embeddings; cosine similarity; timeout 180s
+                             encoding-on-the-fly is now a FALLBACK; ensure_recent_embeddings
+                             is expected to have pre-cached embeddings before this runs
+    semantic.py            — provider-agnostic embeddings (EMBEDDING_PROVIDER/EMBEDDING_MODEL)
+                             exports ensure_recent_embeddings(store, days) — runs as its own stage
+                             pre-dedup; cosine on L2-normalized vectors; timeout 180s
   AI/
-    summarize.py           — SummarizePipeline; Ollama /api/chat; gemma4:latest
+    summarize.py           — SummarizePipeline via DSPy + LiteLLM (any provider)
+                             circuit breaker: 5 consecutive provider errors → bail, defer rest
+                             wall-clock budget via BUDGET_SUMMARIZE_SEC (default 3600s)
+    lm.py                  — _PROVIDERS table maps AI_PROVIDER → (litellm_prefix, default_model, api_key_env)
   tools/
     test_twitter.py        — smoke test; --handles --days --save --login flags
     simulate.py, smoke.py, smoke_rss.py
@@ -99,6 +124,18 @@ scripts/
   setup_agent.sh           — one-time Mac setup: uv sync + install-browsers + X login + launchd plist
                              plist sets TWITTER_HEADLESS=true for automated runs
   run_syndicate.sh         — cron runner; TWITTER_HEADLESS inherited from plist env
+                             calls free_memory.sh BEFORE syndicate (Quit Cursor/MCP, restart Ollama)
+  free_memory.sh           — RAM cleanup; opt-out via SYNDICATE_SKIP_FREE_MEMORY=1
+  clean_stale_runs.sh      — kills syndicate processes elapsed > THRESHOLD_SEC=28800 (8h)
+                             threshold was 4h pre-May-2026 and killed legitimate slow runs mid-summarize
+  watchdog.py              — standalone freshness check; reads runs table directly (no pipeline imports
+                             so it works even if pipeline code is broken). Pings Telegram if any
+                             channel finished_at > 24h ago. Skip a channel via WATCHDOG_SKIP_<CH>=1
+
+  syndicate.plist          — launchd at 11:59 and 23:59 IST
+  syndicate.cleaner.plist  — clean_stale_runs.sh at 09:00 and 21:00 IST
+                             (was 06:00/18:00 — that was killing slow runs at the 6h mark)
+  syndicate.watchdog.plist — watchdog.py at 00:30, 06:30, 12:30, 18:30 IST
 
 .github/workflows/deploy.yml  — push-to-main → npm ci --legacy-peer-deps → build → GitHub Pages
 ```
@@ -140,6 +177,13 @@ CHROME_EXECUTABLE=           # auto-detected if not set; Windows path checked fo
 CHROME_PROFILE_DIR=          # default: SyndicateBrowser (Win) / ~/.syndicate-browser (Mac)
 TWITTER_HEADLESS=            # false for dev; true injected by launchd plist for automated runs
 TWITTER_MAX_TWEETS=          # default: 15
+
+# A–F resilience knobs (optional — defaults are sensible)
+BUDGET_SUMMARIZE_SEC=        # default 3600; 0 disables. Per-iteration polling, not signal-based
+BUDGET_ENSURE_EMBEDDINGS_SEC=  # default 1800; 0 disables
+WATCHDOG_STALE_HOURS=        # default 24; watchdog.py alerts if any channel older than this
+WATCHDOG_SKIP_TWITTER=       # set to 1 to skip that channel in the freshness check
+SYNDICATE_SKIP_FREE_MEMORY=  # set to 1 to skip free_memory.sh in run_syndicate.sh
 ```
 
 No `FEED_REPO_PATH` — local clone path auto-derived from URL as sibling of syndicate dir.
@@ -160,6 +204,24 @@ Fields: `id, cluster_id, cluster_size, source, title, teaser, summary, importanc
 All entrypoints call `pipeline.logger.setup()` at start and `pipeline.logger.close(log_path)`
 in `finally`. Log files in `logs/<YYYY-MM-DD>.txt`. Noisy libs silenced: readability, httpcore,
 urllib3, chardet, playwright.
+
+## Resilience patterns (A–F refactor, May 2026)
+
+Triggered by a 5-day silent outage where runs were dying mid-summarize
+(cleaner killing them at the 4h mark, Ollama OOM under memory pressure)
+and the PWA was sitting on stale data while the laptop hoarded
+unpushed summaries. Six independent fixes:
+
+| Letter | Pattern | Where it lives |
+|---|---|---|
+| **A** | Pre-flight export + try/finally final export, KeyboardInterrupt-safe | `pipeline/orchestrator.py` |
+| **B** | Per-stage wall-clock budgets polled between iterations | `pipeline/budget.py` |
+| **C** | `ensure_recent_embeddings` runs before dedup → dedup ~3h → ~1s | `pipeline/dedup/semantic.py`, wired in `pipeline/main.py` |
+| **D** | Standalone watchdog reads runs table, pings Telegram on staleness | `scripts/watchdog.py` + `scripts/syndicate.watchdog.plist` |
+| **E** | Cleaner threshold 4h → 8h, schedule 06:00/18:00 → 09:00/21:00 | `scripts/clean_stale_runs.sh` + `scripts/syndicate.cleaner.plist` |
+| **F** | Summarize circuit breaker — bail on 5 consecutive provider errors | `pipeline/AI/summarize.py` (`_BREAKER_THRESHOLD`, `_is_provider_error`) |
+
+Per-letter validation is documented in the relevant module's doc.md.
 
 ## Key decisions
 

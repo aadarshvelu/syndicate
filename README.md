@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/python-3.11+-3776AB?style=flat-square&labelColor=black&logo=python&logoColor=white" alt="Python 3.11+"/>
   <img src="https://img.shields.io/badge/DSPy-✦-9D4EDD?style=flat-square&labelColor=black" alt="DSPy"/>
   <img src="https://img.shields.io/badge/Ollama-local-000000?style=flat-square&labelColor=black&logo=ollama" alt="Ollama"/>
-  <img src="https://img.shields.io/badge/Claude_Code-Plugin-D97757?style=flat-square&labelColor=black" alt="Claude Code Plugin"/>
+  <img src="https://img.shields.io/badge/Claude_Code-Plugin-D97757?style=flat-square&labelColor=black&logo=anthropic&logoColor=white" alt="Claude Code Plugin"/>
   <a href="https://github.com/aadarshvelu/syndicate/stargazers"><img src="https://img.shields.io/github/stars/aadarshvelu/syndicate?style=flat-square&labelColor=black&color=ffcb47&logo=github" alt="Stars"/></a>
 </p>
 
@@ -97,13 +97,51 @@ uv run syndicate</code></pre>
     </tr>
     <tr>
       <td>📱 <b>Read on phone/desktop</b><br/><sub>PWA, no install</sub></td>
-      <td>Open the news-archive PWA. (URL added once published.)</td>
+      <td>
+        <a href="https://aadarshvelu.github.io/syndicate/"><b>aadarshvelu.github.io/syndicate</b></a><br/>
+        <sub>Works offline. Add to Home Screen for native-app feel.</sub>
+      </td>
     </tr>
   </tbody>
 </table>
 
 Long-form install walkthrough, env-loading mechanics, and publishing notes
 live in [INSTALL.md](INSTALL.md).
+
+---
+
+## 📱 Read the feed
+
+<a href="https://aadarshvelu.github.io/syndicate/"><b>aadarshvelu.github.io/syndicate</b></a>
+— static React/Vite PWA on GitHub Pages. Reads per-day JSON straight
+from the [news-archive](https://github.com/aadarshvelu/news-archive)
+repo, caches in IndexedDB, works offline once loaded. No accounts, no
+backend, no data leaves the device.
+
+<p align="center">
+  <img src="docs/assets/pwa-screenshot.png" width="38%" alt="syndicate PWA — Unread feed showing an OpenAI voice-API card with reaction pills and category chip"/>
+</p>
+
+**Install it as a phone app** (takes 10 seconds):
+
+<table>
+  <tr>
+    <td>📱 <b>iOS Safari</b></td>
+    <td>Open the link → Share → <b>Add to Home Screen</b> → Add</td>
+  </tr>
+  <tr>
+    <td>🤖 <b>Android Chrome</b></td>
+    <td>Open the link → ⋮ menu → <b>Install app</b> (or <b>Add to Home screen</b>)</td>
+  </tr>
+  <tr>
+    <td>💻 <b>Desktop Chrome / Edge</b></td>
+    <td>Open the link → address-bar install icon (⊕ in the right side) → Install</td>
+  </tr>
+</table>
+
+After install, the PWA launches full-screen like a native app. The
+service worker caches the bundle so subsequent opens work without
+network — only the day's feed JSON is fetched fresh.
 
 ---
 
@@ -125,7 +163,7 @@ once" is near-free.)
 ### 🤖 Local-only AI by default
 
 Provider is one env var (`AI_PROVIDER=ollama|anthropic|openai|gemini|minimax`).
-Default is Ollama because it's free and fast on Apple Silicon. Swap to any
+Default is Ollama because it's free and runs locally. Swap to any
 LiteLLM-supported provider with one row in
 [`pipeline/AI/lm.py`](pipeline/AI/lm.py) — no other code changes.
 
@@ -231,62 +269,34 @@ stage docs live alongside the code:
 
 ---
 
-## 🎨 Frontend flow
+## 🎨 The reader is intentionally lite
 
-The PWA is a static Vite/React bundle on GitHub Pages. It never talks to my
-laptop — only to `news-archive`. All personalization is local.
+The frontend is a static bundle on GitHub Pages. It never talks to my
+laptop — it only fetches per-day JSON files from `news-archive`, caches
+them in the browser, and works offline once loaded. No backend, no
+accounts, no server-side anything.
 
-```mermaid
-flowchart TB
-    subgraph LOAD["App start — main.jsx"]
-        L1[Open IndexedDB<br/>stores: items, likes, meta]
-        L2[Register service worker]
-        L3[Register visibilitychange listener]
-        L1 --> L2 --> L3
-    end
+### Personalization stays on the device
 
-    LOAD --> SYNC
+Every like, every read, every swipe lives in the browser's local
+storage. Nothing leaves the device. The ranking model is small enough
+to explain in one paragraph:
 
-    subgraph SYNC["Sync — Front-end/src/db/sync.js"]
-        Y1[Read meta.lastSyncAt]
-        Y2{Stale enough to resync?}
-        Y2 -- no --> SKIP[Skip cycle]
-        Y2 -- yes --> Y3[Fetch recent day JSONs in parallel<br/>raw.githubusercontent.com/...]
-        Y3 --> Y5
-        Y5[upsertItems<br/>skip if id exists, mark is_read=false]
-        Y5 --> Y6[cleanOldRead<br/>drop old already-read items]
-        Y6 --> Y7[Write meta.lastSyncAt = now]
-    end
+- Each like contributes a weight toward the category and source it
+  belongs to.
+- Older likes decay smoothly, so a story that mattered last month
+  doesn't permanently colour next week's feed.
+- Reactions count at a lighter weight than primary news — a viral
+  cluster with several reaction-likes shouldn't dominate the future
+  feed as if they were independent signals.
+- Total stored likes are capped; the oldest get evicted when new ones
+  arrive, so the model can't grow unbounded.
+- The final score for any unread item combines the AI's importance
+  rating with the user's accumulated category and source preferences.
 
-    SYNC --> RANK
-
-    subgraph RANK["Personalization — Front-end/src/db/store.js"]
-        R1[getPreferenceScores: iterate likes store]
-        R2[Per row: time-decay weight]
-        R3[Reaction likes weighted lighter than news]
-        R4[Sum into per-category and per-source maps]
-        R5["Final score = importance × pref(category)<br/>+ pref(source)"]
-        R1 --> R2 --> R3 --> R4 --> R5
-    end
-
-    RANK --> UI
-
-    subgraph UI["Render — Front-end/src/components/"]
-        U1[FeedStack: sorted by score]
-        U2[NewsCard / TweetCard / ReactionPills]
-        U3{User action}
-        U3 -- swipe past --> U4[markRead<br/>read_at = now]
-        U3 -- tap heart --> U5[storeLike<br/>weighted, evict oldest when capped]
-        U3 -- tap reaction pill --> U6[Open carousel modal]
-        U5 --> RANK
-    end
-```
-
-Likes decay over time, so a story that mattered last month doesn't
-permanently colour next week's feed. Reactions count at a lighter weight
-than news so a single viral cluster doesn't pollute future ranking via
-multiple reaction likes. Total likes are capped — oldest evicted when new
-ones land.
+The result: a feed that re-orders itself around what someone actually
+reads, without an account, without a recommendation server, without
+their data ever leaving the browser tab.
 
 ---
 

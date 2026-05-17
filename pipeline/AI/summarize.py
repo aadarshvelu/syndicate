@@ -22,11 +22,39 @@ from pipeline.AI.base import BaseSummarizer, ItemSummary
 from pipeline.AI.lm import configure_lm
 from pipeline.AI.rss_summarizer import RssSummarizer
 from pipeline.AI.twitter_summarizer import TwitterSummarizer
+from pipeline.budget import BudgetWatch
 from pipeline.storage import DEFAULT_DB_PATH, ItemStore, now_iso
 
 log = logging.getLogger(__name__)
 
 COMMIT_EVERY = 10
+
+# Circuit breaker: if this many consecutive items fail with provider-like
+# errors (network down, timeout, 5xx), assume the AI provider is unhealthy
+# and bail. Without this, a dead Ollama causes the loop to iterate the full
+# --limit (50–100 items) each producing the same connection error, wasting
+# ~15 minutes per dead run.
+_BREAKER_THRESHOLD = 5
+
+# Exception class name substrings that indicate "the provider, not the item,
+# is the problem". Match by name so we don't have to import litellm /
+# anthropic / openai exception types here. Per-item parse failures (bad LM
+# output, etc.) are not in this list — they don't count toward the breaker.
+_PROVIDER_ERROR_HINTS = (
+    "APIConnectionError",
+    "ConnectionError",
+    "Timeout",
+    "TimeoutError",
+    "ServiceUnavailableError",
+    "InternalServerError",
+    "BadGateway",
+    "OllamaError",
+)
+
+
+def _is_provider_error(exc: BaseException) -> bool:
+    name = type(exc).__name__
+    return any(hint in name for hint in _PROVIDER_ERROR_HINTS)
 
 __all__ = [
     "SummarizePipeline",
@@ -86,13 +114,39 @@ class SummarizePipeline:
 
         summarizers = self._build_summarizers()
 
+        consecutive_provider_failures = 0
+        breaker_tripped = False
+        budget = BudgetWatch.for_stage("summarize")
+        budget_tripped = False
+
         try:
             with ItemStore(self.db_path) as store:
                 items = store.items_needing_summary(limit=limit)
                 result.examined = len(items)
-                log.info("Summarize: %d items to process", result.examined)
+                log.info(
+                    "Summarize: %d items to process (budget=%.0fs)",
+                    result.examined, budget.budget_seconds,
+                )
 
                 for i, row in enumerate(items):
+                    if breaker_tripped or budget_tripped:
+                        # Provider is unhealthy OR we've burned through the
+                        # wall-clock budget — don't waste time on remaining
+                        # items. Leave them alone (no skip_reason set) so the
+                        # next run picks them up cleanly.
+                        result.skipped += 1
+                        continue
+
+                    if budget.exceeded():
+                        budget_tripped = True
+                        remaining = result.examined - i
+                        budget.log_exceeded(remaining_items=remaining)
+                        result.errors.append(
+                            f"budget_exceeded: summarize {budget.elapsed():.0f}s "
+                            f">= {budget.budget_seconds:.0f}s; {remaining} item(s) deferred"
+                        )
+                        result.skipped += 1
+                        continue
                     item = dict(row)
                     # raw_meta is stored as JSON text — parse it once here so
                     # every summarizer sees a dict (and not a JSON string).
@@ -141,6 +195,10 @@ class SummarizePipeline:
                             cluster_size=cluster_size,
                             member_contents=member_contents,
                         )
+                        # Any successful call resets the breaker counter, even
+                        # if the result is a skip (banter/empty). What matters
+                        # is that the provider responded coherently.
+                        consecutive_provider_failures = 0
                     except Exception as exc:
                         # predict_with_retry already retried network errors;
                         # anything reaching here is unrecoverable for this item.
@@ -153,6 +211,30 @@ class SummarizePipeline:
                             f"{type(summarizer).__name__}({title_short}): {exc}"
                         )
                         result.skipped += 1
+
+                        if _is_provider_error(exc):
+                            consecutive_provider_failures += 1
+                            if consecutive_provider_failures >= _BREAKER_THRESHOLD:
+                                breaker_tripped = True
+                                remaining = result.examined - (i + 1)
+                                log.error(
+                                    "Summarize circuit breaker tripped: %d consecutive "
+                                    "provider errors (last: %s). Skipping remaining %d item(s) — "
+                                    "they'll be retried next run.",
+                                    consecutive_provider_failures,
+                                    type(exc).__name__,
+                                    remaining,
+                                )
+                                result.errors.append(
+                                    f"circuit_breaker: {consecutive_provider_failures} "
+                                    f"consecutive {type(exc).__name__}; "
+                                    f"{remaining} item(s) deferred"
+                                )
+                        else:
+                            # Per-item content/parse failure — doesn't indicate
+                            # provider health. Reset so we don't trip on a
+                            # cluster of malformed items.
+                            consecutive_provider_failures = 0
                         continue
 
                     if out.skip_reason:

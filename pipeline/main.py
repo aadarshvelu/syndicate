@@ -33,6 +33,7 @@ class DigestResult:
     gmail: dict | None = None
     rss: dict | None = None
     twitter: dict | None = None
+    embed: dict | None = None
     relation: dict | None = None
     dedup: dict | None = None
     summarize: dict | None = None
@@ -106,6 +107,27 @@ def run(
             errors.append(f"twitter crash: {type(exc).__name__}: {exc}")
             log.exception("Twitter pipeline crashed")
 
+    # Pre-compute embeddings for any items in window that don't have one.
+    # This used to happen inside dedup, where 100+ items lacking embeddings
+    # would silently stretch dedup wall time to 3+ hours. Pulling it out
+    # makes the cost visible, fails independently of dedup, and means
+    # steady-state runs (small backlog) are near-instant for both stages.
+    # Dedup keeps its own fallback encoding path for safety.
+    embed_d: dict | None = None
+    if not skip_dedup:
+        log.info("--- Ensure embeddings ---")
+        try:
+            from pipeline.dedup import semantic
+            from pipeline.storage import ItemStore as _Store
+            with _Store(db_path) as _s:
+                er = semantic.ensure_recent_embeddings(_s, days=dedup_window)
+            embed_d = asdict(er)
+            if not er.ok:
+                errors.append(f"ensure_embeddings: {er.errors}")
+        except Exception as exc:
+            errors.append(f"ensure_embeddings crash: {type(exc).__name__}: {exc}")
+            log.exception("ensure_embeddings crashed")
+
     # Dedup BEFORE RelationLinker so the linker sees finalized cluster ids
     # and only matches tweets against primary news rows. This is what makes
     # tweet.parent_cluster_id a stable pointer (cluster ids are immutable once
@@ -165,6 +187,7 @@ def run(
         gmail=gmail_d,
         rss=rss_d,
         twitter=twitter_d,
+        embed=embed_d,
         relation=relation_d,
         dedup=dedup_d,
         summarize=summarize_d,
