@@ -8,8 +8,8 @@
     {
       "name": "syndicate-pipeline",
       "source": {
-        "source": "github",
-        "repo": "aadarshvelu/syndicate"
+        "source": "url",
+        "url": "https://github.com/aadarshvelu/syndicate.git"
       },
       "description": "Run and diagnose the syndicate personal news digest pipeline from Claude Code.",
       "version": "0.1.0",
