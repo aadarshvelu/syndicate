@@ -266,7 +266,7 @@ export default function App() {
               : `calc(60px + env(safe-area-inset-bottom, 0px))`,
           }}>
             {tab === 'unread'
-              ? <FeedStack items={unread} onCardRead={handleRead} onExpand={setSheetCard} sheetCard={sheetCard} filterCategory={activeFilter} onLike={handleLike} onOpenReactions={setReactionModal} reactionModalOpen={reactionModal !== null} onRefresh={handleRefresh} />
+              ? <FeedStack items={unread} onCardRead={handleRead} onExpand={setSheetCard} sheetCard={sheetCard} filterCategory={activeFilter} onLike={handleLike} onOpenReactions={setReactionModal} reactionModalOpen={reactionModal !== null} onRefresh={handleRefresh} paused={showGuide} />
               : <ReadStack items={read} onRefresh={handleRefresh} />
             }
           </div>

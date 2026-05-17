@@ -12,7 +12,7 @@ function pickCard(item) {
   return NewsCard
 }
 
-export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filterCategory, onLike, onOpenReactions, reactionModalOpen, onRefresh }) {
+export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filterCategory, onLike, onOpenReactions, reactionModalOpen, onRefresh, paused = false }) {
   const [history, setHistory] = useState([])
 
   // Build cluster_id → [reactions] map across ALL items (before any filtering).
@@ -194,7 +194,11 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filt
                 stackOffset={offset}
                 onNext={next}
                 onExpand={onExpand}
-                isExpanded={isSheetOpen && offset === 0}
+                // `paused` is an external freeze signal (e.g. GuideOverlay).
+                // We OR it into isExpanded — both cards already gate
+                // playState + pointer handlers on isExpanded, so they pause
+                // cleanly with no card-level changes needed.
+                isExpanded={(isSheetOpen && offset === 0) || paused}
                 onLike={onLike}
                 reactions={reactions}
                 onReactionClick={(reaction, idx) => {
@@ -211,16 +215,6 @@ export default function FeedStack({ items, onCardRead, onExpand, sheetCard, filt
         </motion.div>
       </AnimatePresence>
 
-      {/* Stack-position counter. Anchored top-LEFT so it doesn't collide
-          with the top-right like button on TweetCard / NewsCard (both heart
-          buttons live at top:12, right:12 with zIndex:20). */}
-      <div style={{
-        position: 'absolute', top: 10, left: 14, zIndex: 20,
-        fontSize: 11, color: 'rgba(0,0,0,0.28)', letterSpacing: '0.02em',
-        fontWeight: 500, pointerEvents: 'none',
-      }}>
-        {position} / {items.length}
-      </div>
     </div>
   )
 }
