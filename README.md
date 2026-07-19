@@ -20,7 +20,7 @@
 
 <br />
 
-> Every morning I'd open Gmail, scroll Twitter, hop over to Hacker News —
+> Every morning I'd open Gmail, scroll Twitter, hop over to Hacker News -
 > and somehow read the same OpenAI announcement over and over while missing
 > the small Anthropic update that actually mattered. Tabs full of the same
 > story, none of the signal.
@@ -39,7 +39,7 @@ as things I already had at home:
   <tr>
     <td>🧠</td>
     <td><b>Compute</b></td>
-    <td>My laptop, on a regular schedule via <code>launchd</code>. No daemon, no always-on box. A missed cycle catches up cleanly within the rolling ingest window — longer absences lose older items.</td>
+    <td>My laptop, on a regular schedule via <code>launchd</code>. No daemon, no always-on box. A missed cycle catches up cleanly within the rolling ingest window - longer absences lose older items.</td>
   </tr>
   <tr>
     <td>🤖</td>
@@ -107,13 +107,13 @@ live in [INSTALL.md](INSTALL.md).
 ## 📱 Read the feed
 
 <a href="https://aadarshvelu.github.io/syndicate/"><b>aadarshvelu.github.io/syndicate</b></a>
-— static React/Vite PWA on GitHub Pages. Reads per-day JSON straight
+- static React/Vite PWA on GitHub Pages. Reads per-day JSON straight
 from the [news-archive](https://github.com/aadarshvelu/news-archive)
 repo, caches in IndexedDB, works offline once loaded. No accounts, no
 backend, no data leaves the device.
 
 <p align="center">
-  <img src="docs/assets/pwa-screenshot.png" width="38%" alt="syndicate PWA — Unread feed showing an OpenAI voice-API card with reaction pills and category chip"/>
+  <img src="docs/assets/pwa-screenshot.png" width="38%" alt="syndicate PWA - Unread feed showing an OpenAI voice-API card with reaction pills and category chip"/>
 </p>
 
 **Install it as a phone app** (takes 10 seconds):
@@ -135,7 +135,7 @@ backend, no data leaves the device.
 
 After install, the PWA launches full-screen like a native app. The
 service worker caches the bundle so subsequent opens work without
-network — only the day's feed JSON is fetched fresh.
+network - only the day's feed JSON is fetched fresh.
 
 ---
 
@@ -143,14 +143,14 @@ network — only the day's feed JSON is fetched fresh.
 
 ### 🗞️ Watches every source
 
-Gmail newsletters, RSS feeds, and Twitter — all collected into one SQLite.
+Gmail newsletters, RSS feeds, and Twitter - all collected into one SQLite.
 The feed list lives in [`config/`](config/). Add a source, restart the next
 run, it shows up in the archive. No service to redeploy.
 
 ### 🔍 Four-tier dedup
 
 Cross-channel duplicates collapse into clusters before summarization sees them
-— exact URL → fuzzy text → simhash → semantic embedding. I only pay the LLM
+- exact URL → fuzzy text → simhash → semantic embedding. I only pay the LLM
 once per story, not once per source. (And with a local model, even "paying
 once" is near-free.)
 
@@ -159,7 +159,7 @@ once" is near-free.)
 Provider is one env var (`AI_PROVIDER=ollama|anthropic|openai|gemini|minimax`).
 Default is Ollama because it's free and runs locally. Swap to any
 LiteLLM-supported provider with one row in
-[`pipeline/AI/lm.py`](pipeline/AI/lm.py) — no other code changes.
+[`pipeline/AI/lm.py`](pipeline/AI/lm.py) - no other code changes.
 
 ### 📱 Static PWA frontend
 
@@ -185,7 +185,7 @@ flowchart TD
 
     SRC --> ING
 
-    subgraph ING["Stage 1 · Ingest — pipeline/ingestion/"]
+    subgraph ING["Stage 1 · Ingest - pipeline/ingestion/"]
         I1[Fetch raw items]
         I2[URL canonicalize<br/>strip tracking params, unwrap redirects]
         I3{URL exists in items?}
@@ -196,7 +196,7 @@ flowchart TD
 
     ING --> LINK
 
-    subgraph LINK["Stage 2 · Relation linker — pipeline/relation/"]
+    subgraph LINK["Stage 2 · Relation linker - pipeline/relation/"]
         L1[Build embedding per news item]
         L2[For each tweet: nearest news by cosine]
         L3{Above similarity threshold?}
@@ -209,7 +209,7 @@ flowchart TD
 
     LINK --> DEDUP
 
-    subgraph DEDUP["Stage 3 · Dedup T1–T4 — pipeline/dedup/"]
+    subgraph DEDUP["Stage 3 · Dedup T1–T4 - pipeline/dedup/"]
         D1{T1 exact URL or title?}
         D2{T2 fuzzy text + recent?}
         D3{T3 simhash near-match?}
@@ -231,7 +231,7 @@ flowchart TD
 
     DEDUP --> SUM
 
-    subgraph SUM["Stage 4 · Summarize — pipeline/AI/"]
+    subgraph SUM["Stage 4 · Summarize - pipeline/AI/"]
         SM1[Pick primary items where summary IS NULL]
         SM2[Merge cluster content<br/>primary title + member bodies]
         SM3[DSPy ChainOfThought via configured provider]
@@ -244,7 +244,7 @@ flowchart TD
 
     SUM --> EXP
 
-    subgraph EXP["Stage 5 · Export — pipeline/git_export.py"]
+    subgraph EXP["Stage 5 · Export - pipeline/git_export.py"]
         E1[Recent days from DB]
         E2[Write news-archive/&lt;Year&gt;/&lt;Month&gt;/&lt;dd-Mon-yy&gt;.json]
         E3[git add + commit + push]
@@ -266,7 +266,7 @@ stage docs live alongside the code:
 ## 🎨 The reader is intentionally lite
 
 The frontend is a static bundle on GitHub Pages. It never talks to my
-laptop — it only fetches per-day JSON files from `news-archive`, caches
+laptop - it only fetches per-day JSON files from `news-archive`, caches
 them in the browser, and works offline once loaded. No backend, no
 accounts, no server-side anything.
 
@@ -280,7 +280,7 @@ to explain in one paragraph:
   belongs to.
 - Older likes decay smoothly, so a story that mattered last month
   doesn't permanently colour next week's feed.
-- Reactions count at a lighter weight than primary news — a viral
+- Reactions count at a lighter weight than primary news - a viral
   cluster with several reaction-likes shouldn't dominate the future
   feed as if they were independent signals.
 - Total stored likes are capped; the oldest get evicted when new ones
@@ -316,7 +316,7 @@ their data ever leaving the browser tab.
     </tr>
     <tr>
       <td>🚀 <b>Run</b><br/><sub>chains all of the above</sub></td>
-      <td><code>run</code> — parity with <code>uv run syndicate</code></td>
+      <td><code>run</code> - parity with <code>uv run syndicate</code></td>
     </tr>
   </tbody>
 </table>
@@ -325,18 +325,28 @@ Side-effect skills carry `disable-model-invocation: true`, so Claude won't
 fire them by accident. You invoke them explicitly. See
 [INSTALL.md](INSTALL.md) for the per-skill env requirements.
 
+Twitter ingestion defaults to Playwright with a persistent Chrome profile.
+If you already use Hermes Tweet/Xquik, set `TWITTER_BACKEND=hermes_tweet`
+and `XQUIK_API_KEY` to fetch the configured handles through that backend
+while keeping the same SQLite schema, dedup, relation linking, summaries,
+and export flow.
+
+Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
+
 ---
 
 ## ⚠️ Honest limitations
 
 - **It's local.** Skills read your `.env`, write to local SQLite, and talk to
   Ollama on `localhost`. Claude Code reaches all of those. Claude's chat web
-  app can't — that runtime is sandboxed off from your machine.
-- **Twitter scraping is fragile.** Playwright + a persistent Chrome profile.
-  When X.com changes its DOM, the selectors break and I update them. Skip
-  Twitter if you don't want that maintenance.
+  app can't - that runtime is sandboxed off from your machine.
+- **Twitter scraping is fragile.** Playwright + a persistent Chrome profile is
+  still the default. When X.com changes its DOM, the selectors break and I
+  update them. Use `TWITTER_BACKEND=hermes_tweet` if you prefer a Hermes
+  Tweet/Xquik API-backed route for the same configured handles, or skip Twitter
+  if you don't want that maintenance.
 - **Tuned for my reading.** Categories, importance heuristics, and the feed
-  list reflect what I want to see. Easy to retune — see the category enum in
+  list reflect what I want to see. Easy to retune - see the category enum in
   [`pipeline/AI/`](pipeline/AI/).
 
 ---
@@ -344,7 +354,7 @@ fire them by accident. You invoke them explicitly. See
 ## 🤝 Contributing
 
 Issues and PRs welcome. Module-level docs live next to the code:
-[`pipeline/*/doc.md`](pipeline/). Start there before editing — they describe
+[`pipeline/*/doc.md`](pipeline/). Start there before editing - they describe
 what each module is and isn't responsible for.
 
 ## 📝 License

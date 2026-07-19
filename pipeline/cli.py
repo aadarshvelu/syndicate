@@ -20,9 +20,10 @@ import asyncio
 import json
 import logging
 import sys
+from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -87,20 +88,24 @@ def _run_with_logger(
     finally:
         _logger.close(log_path)
 
-    _emit({
-        "ok": ok,
-        "result": result_d,
-        "log_path": str(log_path.relative_to(_REPO)),
-    })
+    _emit(
+        {
+            "ok": ok,
+            "result": result_d,
+            "log_path": str(log_path.relative_to(_REPO)),
+        }
+    )
     return 0 if ok else 1
 
 
 # ── subcommand handlers ──────────────────────────────────────────────────────
 
+
 def _cmd_status(args: argparse.Namespace) -> Any:
     # status.py is pure-read; we skip the logger setup envelope entirely so
     # the snapshot doesn't pollute today's log with status queries.
     from pipeline.status import snapshot_dict
+
     return snapshot_dict(args.db)
 
 
@@ -108,55 +113,62 @@ def _cmd_health(args: argparse.Namespace) -> Any:
     """Lighter weight than `status` — just the health checks (ollama, env, disk).
     Designed for fast polling by /syndicate-heal."""
     from pipeline.status import snapshot
+
     snap = snapshot(args.db)
     return {
-        "ok": (
-            snap.ollama_reachable
-            and snap.disk_free_gb > 1.0
-            and snap.db_exists
-        ),
-        "ollama_reachable":     snap.ollama_reachable,
+        "ok": (snap.ollama_reachable and snap.disk_free_gb > 1.0 and snap.db_exists),
+        "ollama_reachable": snap.ollama_reachable,
         "ollama_models_loaded": snap.ollama_models_loaded,
-        "disk_free_gb":         snap.disk_free_gb,
-        "db_exists":            snap.db_exists,
-        "env_present":          snap.env_present,
-        "git_branch":           snap.git_branch,
-        "git_dirty":            snap.git_dirty,
-        "errors":               snap.errors,
+        "disk_free_gb": snap.disk_free_gb,
+        "db_exists": snap.db_exists,
+        "env_present": snap.env_present,
+        "git_branch": snap.git_branch,
+        "git_dirty": snap.git_dirty,
+        "errors": snap.errors,
     }
 
 
 def _cmd_ingest_gmail(args: argparse.Namespace) -> Any:
     from pipeline.ingestion.gmail import GmailPipeline
+
     return GmailPipeline(db_path=args.db).run(
-        days=args.days, folder=args.folder, dump_json=args.dump_json,
+        days=args.days,
+        folder=args.folder,
+        dump_json=args.dump_json,
     )
 
 
 def _cmd_ingest_rss(args: argparse.Namespace) -> Any:
     from pipeline.ingestion.rss import RssPipeline
+
     return asyncio.run(
         RssPipeline(db_path=args.db).run(
-            days=args.days, do_fetch=not args.no_fetch, dump_json=args.dump_json,
+            days=args.days,
+            do_fetch=not args.no_fetch,
+            dump_json=args.dump_json,
         )
     )
 
 
 def _cmd_ingest_twitter(args: argparse.Namespace) -> Any:
     import os
+
     if args.headless is not None:
         os.environ["TWITTER_HEADLESS"] = "true" if args.headless else "false"
     from pipeline.ingestion.twitter import TwitterPipeline
-    return asyncio.run(TwitterPipeline(db_path=args.db).run(days=args.days))
+
+    return TwitterPipeline(db_path=args.db).run(days=args.days)
 
 
 def _cmd_link(args: argparse.Namespace) -> Any:
     from pipeline.relation.linker import RelationLinker
+
     return RelationLinker(db_path=args.db).run()
 
 
 def _cmd_dedup(args: argparse.Namespace) -> Any:
     from pipeline.dedup.runner import DedupPipeline
+
     tiers = tuple(int(t) for t in args.tiers.split(",")) if args.tiers else (1, 2, 3, 4)
     return DedupPipeline(db_path=args.db).run(
         window_days=args.window,
@@ -168,11 +180,13 @@ def _cmd_dedup(args: argparse.Namespace) -> Any:
 
 def _cmd_summarize(args: argparse.Namespace) -> Any:
     from pipeline.AI.summarize import SummarizePipeline
+
     return SummarizePipeline(db_path=args.db, model=args.model).run(limit=args.limit)
 
 
 def _cmd_export(args: argparse.Namespace) -> Any:
     from pipeline.git_export import GitExport
+
     return GitExport(db_path=args.db).run()
 
 
@@ -200,8 +214,9 @@ def _cmd_notify(args: argparse.Namespace) -> Any:
         data.setdefault("finished_at", "")
         data.setdefault("ok", False)
         data.setdefault("errors", [])
-        obj = OrchestratorResult(**{k: v for k, v in data.items()
-                                     if k in OrchestratorResult.__dataclass_fields__})
+        obj = OrchestratorResult(
+            **{k: v for k, v in data.items() if k in OrchestratorResult.__dataclass_fields__}
+        )
     except (json.JSONDecodeError, TypeError) as e:
         return {"ok": False, "errors": [f"stdin parse: {type(e).__name__}: {e}"]}
 
@@ -285,14 +300,16 @@ def _cmd_run(args: argparse.Namespace) -> Any:
 
 # ── argparse wiring ──────────────────────────────────────────────────────────
 
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pipeline.cli",
         description="Unified CLI for the syndicate pipeline. Each subcommand "
-                    "emits {ok, result, log_path} JSON on stdout.",
+        "emits {ok, result, log_path} JSON on stdout.",
     )
-    p.add_argument("--db", default=str(DEFAULT_DB_PATH),
-                   help=f"SQLite path (default: {DEFAULT_DB_PATH})")
+    p.add_argument(
+        "--db", default=str(DEFAULT_DB_PATH), help=f"SQLite path (default: {DEFAULT_DB_PATH})"
+    )
     p.add_argument("-v", "--verbose", action="store_true")
 
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -307,22 +324,25 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("ingest-rss", help="Fetch RSS feeds")
     sp.add_argument("--days", type=int, default=1)
-    sp.add_argument("--no-fetch", action="store_true",
-                    help="Only re-process already-fetched HTML; skip network")
+    sp.add_argument(
+        "--no-fetch", action="store_true", help="Only re-process already-fetched HTML; skip network"
+    )
     sp.add_argument("--dump-json", default=None)
 
     sp = sub.add_parser("ingest-twitter", help="Scrape tweets via Playwright")
     sp.add_argument("--days", type=int, default=2)
-    sp.add_argument("--headless", type=lambda s: s.lower() in ("1", "true", "yes"),
-                    default=None,
-                    help="Override TWITTER_HEADLESS env (true/false)")
+    sp.add_argument(
+        "--headless",
+        type=lambda s: s.lower() in ("1", "true", "yes"),
+        default=None,
+        help="Override TWITTER_HEADLESS env (true/false)",
+    )
 
     sub.add_parser("link", help="Run relation linker")
 
     sp = sub.add_parser("dedup", help="Run T1-T4 dedup across the dedup window")
     sp.add_argument("--window", type=int, default=10)
-    sp.add_argument("--tiers", default="1,2,3,4",
-                    help='Comma-separated tier list, e.g. "1,2,3,4"')
+    sp.add_argument("--tiers", default="1,2,3,4", help='Comma-separated tier list, e.g. "1,2,3,4"')
     sp.add_argument("--t3-hamming", type=int, default=3)
     sp.add_argument("--t4-threshold", type=float, default=0.60)
 
@@ -335,32 +355,34 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("notify", help="Pipe OrchestratorResult JSON on stdin → Telegram")
 
     sp = sub.add_parser("run", help="Full pipeline (parity with `uv run syndicate`)")
-    sp.add_argument("--days", type=int, default=2,
-                    help="Ingestion lookback in days")
+    sp.add_argument("--days", type=int, default=2, help="Ingestion lookback in days")
     sp.add_argument("--dedup-window", type=int, default=10)
     sp.add_argument("--summarize-limit", type=int, default=50)
     sp.add_argument("--skip-gmail", action="store_true")
     sp.add_argument("--skip-rss", action="store_true")
     sp.add_argument("--skip-twitter", action="store_true")
     sp.add_argument("--skip-git", action="store_true")
-    sp.add_argument("--no-notify", action="store_true",
-                    help="Skip Telegram notify (default: notify if configured)")
+    sp.add_argument(
+        "--no-notify",
+        action="store_true",
+        help="Skip Telegram notify (default: notify if configured)",
+    )
 
     return p
 
 
 _HANDLERS: dict[str, Callable[[argparse.Namespace], Any]] = {
-    "status":         _cmd_status,
-    "health":         _cmd_health,
-    "ingest-gmail":   _cmd_ingest_gmail,
-    "ingest-rss":     _cmd_ingest_rss,
+    "status": _cmd_status,
+    "health": _cmd_health,
+    "ingest-gmail": _cmd_ingest_gmail,
+    "ingest-rss": _cmd_ingest_rss,
     "ingest-twitter": _cmd_ingest_twitter,
-    "link":           _cmd_link,
-    "dedup":          _cmd_dedup,
-    "summarize":      _cmd_summarize,
-    "export":         _cmd_export,
-    "notify":         _cmd_notify,
-    "run":            _cmd_run,
+    "link": _cmd_link,
+    "dedup": _cmd_dedup,
+    "summarize": _cmd_summarize,
+    "export": _cmd_export,
+    "notify": _cmd_notify,
+    "run": _cmd_run,
 }
 
 # Subcommands that should NOT spin up file logging — they're either

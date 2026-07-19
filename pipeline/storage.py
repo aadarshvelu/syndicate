@@ -14,14 +14,14 @@ import json
 import logging
 import sqlite3
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = Path("db") / "snapshot.db"
 
-# Tables only — runs first. Indexes that reference newer columns must wait
+# Tables only - runs first. Indexes that reference newer columns must wait
 # until _ensure_columns has had a chance to ALTER pre-migration tables.
 _TABLES_SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
@@ -77,8 +77,9 @@ _DEDUP_COLUMNS = (
     ("embedding", "BLOB"),
     ("image_url", "TEXT"),
     ("teaser", "TEXT"),
-    ("relation", "TEXT"),        # null | standalone | reaction
-    ("parent_item_id", "TEXT"),  # FK -> items.id (audit/debug; the specific row matched at link time)
+    ("relation", "TEXT"),  # null | standalone | reaction
+    # FK -> items.id for the specific row matched at link time.
+    ("parent_item_id", "TEXT"),
     # null means "not yet summarized"; non-null means "permanently skipped" with reason.
     # Gates items_needing_summary so banter/empty/reaction rows aren't re-processed.
     ("summarize_skip_reason", "TEXT"),
@@ -100,7 +101,7 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
 
 
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def new_id() -> str:
@@ -126,7 +127,7 @@ class ItemStore:
         self.conn.executescript(_TABLES_SCHEMA)
         self.conn.commit()
         # 2. ALTER TABLE for any post-1st-version columns missing on
-        #    a pre-migration DB. New DBs already have them — no-op.
+        #    a pre-migration DB. New DBs already have them - no-op.
         _ensure_columns(self.conn)
         # 3. Indexes (some reference columns added in step 2).
         self.conn.executescript(_INDEXES_SCHEMA)
@@ -142,9 +143,7 @@ class ItemStore:
         self.close()
 
     def has_dedup_key(self, dedup_key: str) -> bool:
-        cur = self.conn.execute(
-            "SELECT 1 FROM items WHERE dedup_key = ? LIMIT 1", (dedup_key,)
-        )
+        cur = self.conn.execute("SELECT 1 FROM items WHERE dedup_key = ? LIMIT 1", (dedup_key,))
         return cur.fetchone() is not None
 
     def existing_dedup_keys(self, keys: list[str]) -> set[str]:
@@ -253,7 +252,7 @@ class ItemStore:
         *,
         days: int,
         only_unclustered: bool = False,
-        as_of: "datetime | None" = None,
+        as_of: datetime | None = None,
     ) -> list[sqlite3.Row]:
         """Return items whose `date` falls in the last `days` days (UTC).
 
@@ -261,36 +260,34 @@ class ItemStore:
         Items without a parseable date fall back to fetched_at for the window.
         `as_of` overrides the reference point for the window (default: now).
         """
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        ref = as_of if as_of is not None else datetime.now(timezone.utc)
+        ref = as_of if as_of is not None else datetime.now(UTC)
         cutoff = (ref - timedelta(days=days)).isoformat().replace("+00:00", "Z")
         sql = (
             "SELECT id, dedup_key, source_id, source_channel, title, url, date, "
             "       fetched_at, content, cluster_id, is_primary, cluster_method, "
             "       embedding "
             "FROM items "
-            "WHERE COALESCE(date, fetched_at) >= ?"
+            "WHERE COALESCE(NULLIF(date, ''), fetched_at) >= ?"
         )
         params: list = [cutoff]
         if only_unclustered:
             sql += " AND cluster_id IS NULL"
-        sql += " ORDER BY COALESCE(date, fetched_at) DESC"
+        sql += " ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC"
         return list(self.conn.execute(sql, params).fetchall())
 
     def items_clustered_in_window(self, days: int) -> list[sqlite3.Row]:
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace(
-            "+00:00", "Z"
-        )
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
         sql = (
             "SELECT id, dedup_key, source_id, source_channel, title, url, date, "
             "       fetched_at, content, cluster_id, is_primary, cluster_method, "
             "       embedding "
             "FROM items "
-            "WHERE COALESCE(date, fetched_at) >= ? AND cluster_id IS NOT NULL "
-            "ORDER BY COALESCE(date, fetched_at) DESC"
+            "WHERE COALESCE(NULLIF(date, ''), fetched_at) >= ? AND cluster_id IS NOT NULL "
+            "ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC"
         )
         return list(self.conn.execute(sql, [cutoff]).fetchall())
 
@@ -307,17 +304,13 @@ class ItemStore:
         )
 
     def get_embedding(self, item_id: str) -> bytes | None:
-        row = self.conn.execute(
-            "SELECT embedding FROM items WHERE id=?", (item_id,)
-        ).fetchone()
+        row = self.conn.execute("SELECT embedding FROM items WHERE id=?", (item_id,)).fetchone()
         if row is None:
             return None
         return row["embedding"]
 
     def set_embedding(self, item_id: str, blob: bytes) -> None:
-        self.conn.execute(
-            "UPDATE items SET embedding=? WHERE id=?", (blob, item_id)
-        )
+        self.conn.execute("UPDATE items SET embedding=? WHERE id=?", (blob, item_id))
 
     def items_needing_summary(self, *, limit: int = 100) -> list[sqlite3.Row]:
         """Primary items that have no AI summary yet, NEWEST FIRST.
@@ -326,7 +319,7 @@ class ItemStore:
           1. Today's items get summarized today and land in today's export
              JSON, surfacing fresh content in the PWA on the next run.
           2. When ingestion outpaces summarize throughput (e.g. 50/run cap
-             vs 80 items/day arriving), the backlog naturally ages out —
+             vs 80 items/day arriving), the backlog naturally ages out -
              stale RSS items from weeks ago don't block fresh news.
         Old stragglers still get a chance once the fresh queue is empty.
 
@@ -335,8 +328,9 @@ class ItemStore:
         the Twitter vision path, relation/parent_item_id for the reaction
         filter, and author for prompt context.
         """
-        return list(self.conn.execute(
-            """
+        return list(
+            self.conn.execute(
+                """
             SELECT id, title, content, is_html, cluster_id, date, fetched_at,
                    source_id, source_channel, author, image_url, raw_meta,
                    relation, parent_item_id
@@ -349,11 +343,12 @@ class ItemStore:
                   OR (source_channel = 'twitter'
                       AND image_url IS NOT NULL AND image_url != '')
               )
-            ORDER BY COALESCE(date, fetched_at) DESC
+            ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC
             LIMIT ?
             """,
-            (limit,),
-        ).fetchall())
+                (limit,),
+            ).fetchall()
+        )
 
     def set_enrichment(
         self,
@@ -370,12 +365,12 @@ class ItemStore:
         )
 
     def set_skip_reason(self, item_id: str, reason: str | None) -> None:
-        """Mark an item as permanently skipped from summarization — or clear
+        """Mark an item as permanently skipped from summarization - or clear
         an existing mark by passing reason=None.
 
         Permanent skips (banter, empty content) are persisted so they don't
         re-enter items_needing_summary on every pipeline run. Passing None
-        clears the column so the next run reconsiders the row — used when
+        clears the column so the next run reconsiders the row - used when
         the linker promotes a previously-banter tweet to a reaction (the
         new code path will summarize it correctly).
 
@@ -387,9 +382,7 @@ class ItemStore:
             (reason, item_id),
         )
 
-    def cluster_members_content(
-        self, cluster_id: str, *, exclude_id: str
-    ) -> tuple[list[str], int]:
+    def cluster_members_content(self, cluster_id: str, *, exclude_id: str) -> tuple[list[str], int]:
         """Return (content list of up to 2 non-primary members, total cluster size)."""
         rows = self.conn.execute(
             """
@@ -408,8 +401,9 @@ class ItemStore:
     def enriched_primary_items_for_date(self, target_date: date) -> list[sqlite3.Row]:
         """Enriched primary items (summary set) for a specific UTC calendar date."""
         date_str = target_date.isoformat()  # "2026-05-03"
-        return list(self.conn.execute(
-            """
+        return list(
+            self.conn.execute(
+                """
             SELECT i.id, i.title, i.teaser, i.summary, i.content,
                    i.importance, i.category,
                    i.url, i.source_id, i.source_channel, i.date, i.image_url,
@@ -421,11 +415,12 @@ class ItemStore:
                    END AS cluster_size
             FROM items i
             WHERE i.is_primary = 1 AND i.summary IS NOT NULL
-              AND date(COALESCE(i.date, i.fetched_at)) = ?
-            ORDER BY i.importance DESC, COALESCE(i.date, i.fetched_at) DESC
+              AND date(COALESCE(NULLIF(i.date, ''), i.fetched_at)) = ?
+            ORDER BY i.importance DESC, COALESCE(NULLIF(i.date, ''), i.fetched_at) DESC
             """,
-            (date_str,),
-        ).fetchall())
+                (date_str,),
+            ).fetchall()
+        )
 
     def set_relation(
         self,
@@ -447,63 +442,72 @@ class ItemStore:
           - relation='standalone' AND parent_cluster_id IS NULL: was checked once
             but no matching news existed then. Re-evaluate in case news has
             arrived since. Once linked (parent_cluster_id IS NOT NULL) we
-            never reconsider — the link is stable.
+            never reconsider - the link is stable.
         """
-        from datetime import datetime, timedelta, timezone
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
-        return list(self.conn.execute(
-            """
+        from datetime import datetime, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+        return list(
+            self.conn.execute(
+                """
             SELECT id, source_id, source_channel, title, url, date, fetched_at,
                    content, embedding
             FROM items
             WHERE source_channel = 'twitter'
-              AND COALESCE(date, fetched_at) >= ?
+              AND COALESCE(NULLIF(date, ''), fetched_at) >= ?
               AND (
                   relation IS NULL
                   OR (relation = 'standalone' AND parent_cluster_id IS NULL)
               )
-            ORDER BY COALESCE(date, fetched_at) DESC
+            ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC
             """,
-            (cutoff,),
-        ).fetchall())
+                (cutoff,),
+            ).fetchall()
+        )
 
     def news_items_in_window(self, days: int) -> list[sqlite3.Row]:
         """RSS/Gmail items within window for relation matching (all is_primary states)."""
-        from datetime import datetime, timedelta, timezone
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
-        return list(self.conn.execute(
-            """
+        from datetime import datetime, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+        return list(
+            self.conn.execute(
+                """
             SELECT id, source_id, source_channel, title, url, date, fetched_at,
                    content, embedding, cluster_id
             FROM items
             WHERE source_channel IN ('rss', 'gmail')
-              AND COALESCE(date, fetched_at) >= ?
-            ORDER BY COALESCE(date, fetched_at) DESC
+              AND COALESCE(NULLIF(date, ''), fetched_at) >= ?
+            ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC
             """,
-            (cutoff,),
-        ).fetchall())
+                (cutoff,),
+            ).fetchall()
+        )
 
     def news_primary_items_in_window(self, days: int) -> list[sqlite3.Row]:
-        """RSS/Gmail items within window — ONLY the primary copy of each cluster.
+        """RSS/Gmail items within window - ONLY the primary copy of each cluster.
 
         Used by RelationLinker (run after Dedup) so tweets link to the canonical
         item in each cluster, not a soon-to-be-demoted duplicate. The returned
         row includes cluster_id so the linker can store parent_cluster_id directly.
         """
-        from datetime import datetime, timedelta, timezone
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
-        return list(self.conn.execute(
-            """
+        from datetime import datetime, timedelta
+
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+        return list(
+            self.conn.execute(
+                """
             SELECT id, source_id, source_channel, title, url, date, fetched_at,
                    content, embedding, cluster_id
             FROM items
             WHERE source_channel IN ('rss', 'gmail')
               AND is_primary = 1
-              AND COALESCE(date, fetched_at) >= ?
-            ORDER BY COALESCE(date, fetched_at) DESC
+              AND COALESCE(NULLIF(date, ''), fetched_at) >= ?
+            ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC
             """,
-            (cutoff,),
-        ).fetchall())
+                (cutoff,),
+            ).fetchall()
+        )
 
     def commit(self) -> None:
         self.conn.commit()
