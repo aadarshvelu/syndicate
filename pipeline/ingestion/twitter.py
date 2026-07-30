@@ -1,7 +1,7 @@
-"""Twitter/X scraper using Playwright with a persistent Chrome profile.
+"""Twitter/X ingestion through Playwright or Xquik.
 
-Scrapes recent tweets from configured high-profile accounts and normalises
-them into the same item schema used by Gmail/RSS pipelines.
+Fetches recent tweets from configured accounts and normalises them into the
+same item schema used by Gmail/RSS pipelines.
 
 Requirements:
     pip install playwright
@@ -27,23 +27,20 @@ import os
 import platform
 import re
 import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
-from email.utils import parsedate_to_datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
 
 import httpx
 
 log = logging.getLogger(__name__)
 
 _CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "twitter_sources.json"
-_DEFAULT_XQUIK_BASE_URL = "https://xquik.com/api/v1"
 
 # ── env / defaults ────────────────────────────────────────────────────────────
-
 
 def _env_str(key: str, default: str = "") -> str:
     return os.getenv(key, default).strip()
@@ -51,9 +48,11 @@ def _env_str(key: str, default: str = "") -> str:
 
 def _twitter_backend() -> str:
     backend = _env_str("TWITTER_BACKEND", "playwright").lower().replace("-", "_")
+    if backend in {"", "playwright"}:
+        return "playwright"
     if backend in {"hermes_tweet", "xquik"}:
         return "hermes_tweet"
-    return "playwright"
+    raise RuntimeError(f"Unsupported TWITTER_BACKEND={backend!r}. Use playwright or hermes_tweet.")
 
 
 def _chrome_executable() -> str | None:
@@ -63,21 +62,9 @@ def _chrome_executable() -> str | None:
     candidates: list[Path] = []
     if platform.system() == "Windows":
         candidates = [
-            Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
-            / "Google"
-            / "Chrome"
-            / "Application"
-            / "chrome.exe",
-            Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"))
-            / "Google"
-            / "Chrome"
-            / "Application"
-            / "chrome.exe",
-            Path(os.environ.get("LOCALAPPDATA", ""))
-            / "Google"
-            / "Chrome"
-            / "Application"
-            / "chrome.exe",
+            Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+            Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")) / "Google" / "Chrome" / "Application" / "chrome.exe",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
         ]
     elif platform.system() == "Darwin":
         candidates = [
@@ -103,15 +90,11 @@ def _chrome_profile_dir() -> str:
         return str(Path.home() / ".syndicate-browser")
     return str(Path.home() / ".syndicate-browser")
 
-
 def _env_bool(key: str, default: bool) -> bool:
     val = os.getenv(key, "").strip().lower()
-    if val in ("1", "true", "yes"):
-        return True
-    if val in ("0", "false", "no"):
-        return False
+    if val in ("1", "true", "yes"):  return True
+    if val in ("0", "false", "no"):  return False
     return default
-
 
 def _env_int(key: str, default: int) -> int:
     try:
@@ -119,9 +102,7 @@ def _env_int(key: str, default: int) -> int:
     except ValueError:
         return default
 
-
 # ── result dataclass ──────────────────────────────────────────────────────────
-
 
 @dataclass
 class TwitterResult:
@@ -135,10 +116,8 @@ class TwitterResult:
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-
 def _dedup_key(tweet_url: str) -> str:
     return hashlib.sha1(tweet_url.encode()).hexdigest()
-
 
 def _merge_bursts(items: list[dict], gap_min: int = 30) -> list[dict]:
     """Merge consecutive tweets from same account posted within gap_min minutes."""
@@ -166,7 +145,6 @@ def _merge_bursts(items: list[dict], gap_min: int = 30) -> list[dict]:
     merged.append(_collapse_group(group))
     return merged
 
-
 def _collapse_group(group: list[dict]) -> dict:
     if len(group) == 1:
         return group[0]
@@ -176,41 +154,30 @@ def _collapse_group(group: list[dict]) -> dict:
     base["id"] = str(uuid.uuid4())
     base["dedup_key"] = hashlib.sha1("|".join(urls).encode()).hexdigest()
     base["content"] = combined_text
-    base["title"] = combined_text[:120].strip().replace("\n", " ") + (
-        "..." if len(combined_text) > 120 else ""
-    )
+    base["title"] = combined_text[:120].strip().replace("\n", " ") + ("..." if len(combined_text) > 120 else "")
     base["raw_meta"] = {**base.get("raw_meta", {}), "merged_tweet_count": len(group)}
     return base
-
 
 def _new_id() -> str:
     return str(uuid.uuid4())
 
-
 def _now_iso() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
-
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 def _load_sources() -> list[dict]:
     with open(_CONFIG_PATH, encoding="utf-8") as f:
         return [s for s in json.load(f) if s.get("enabled", True)]
-
 
 def _kill_syndicate_chrome() -> None:
     _step("Killing any existing SyndicateBrowser Chrome session...")
     try:
         if platform.system() == "Windows":
             subprocess.run(
-                [
-                    "powershell",
-                    "-NoProfile",
-                    "-Command",
-                    "Get-WmiObject Win32_Process -Filter \"Name='chrome.exe'\" | "
-                    "Where-Object { $_.CommandLine -like '*SyndicateBrowser*' } | "
-                    "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }",
-                ],
-                capture_output=True,
-                timeout=8,
+                ["powershell", "-NoProfile", "-Command",
+                 f"Get-WmiObject Win32_Process -Filter \"Name='chrome.exe'\" | "
+                 f"Where-Object {{ $_.CommandLine -like '*SyndicateBrowser*' }} | "
+                 f"ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"],
+                capture_output=True, timeout=8,
             )
         else:
             subprocess.run(["pkill", "-f", "SyndicateBrowser"], capture_output=True, timeout=5)
@@ -220,30 +187,20 @@ def _kill_syndicate_chrome() -> None:
 
 
 def _parse_tweet_date(dt_str: str) -> str:
-    """Parse ISO or X API date strings into ISO 8601 UTC."""
-    value = dt_str.strip()
-    if not value:
-        return ""
+    """Parse an ISO datetime string into ISO 8601 UTC."""
     try:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        try:
-            dt = parsedate_to_datetime(value)
-        except (TypeError, ValueError):
-            return ""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
+        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return ""
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 def _is_within_window(date_iso: str, days: int) -> bool:
     try:
         dt = datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
-        cutoff = datetime.now(UTC) - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         return dt >= cutoff
     except Exception:
         return True
-
 
 def _tweet_to_item(
     tweet_url: str,
@@ -257,173 +214,24 @@ def _tweet_to_item(
         title += "..."
 
     return {
-        "id": _new_id(),
-        "dedup_key": _dedup_key(tweet_url),
-        "source_id": source["id"],
+        "id":             _new_id(),
+        "dedup_key":      _dedup_key(tweet_url),
+        "source_id":      source["id"],
         "source_channel": "twitter",
-        "title": title,
-        "desp": "",
-        "date": date_iso,
-        "content": text,
-        "is_html": 0,
-        "url": tweet_url,
-        "author": author,
-        "fetched_at": _now_iso(),
-        "image_url": "",
+        "title":          title,
+        "desp":           "",
+        "date":           date_iso,
+        "content":        text,
+        "is_html":        0,
+        "url":            tweet_url,
+        "author":         author,
+        "fetched_at":     _now_iso(),
+        "image_url":      "",
         "raw_meta": {
-            "twitter_handle": source["handle"],
-            "category_hint": source.get("category_hint", ""),
+            "twitter_handle":   source["handle"],
+            "category_hint":    source.get("category_hint", ""),
         },
     }
-
-
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
-
-
-def _string(value: Any) -> str:
-    return value if isinstance(value, str) else "" if value is None else str(value)
-
-
-def _normalise_xquik_base_url() -> str:
-    raw = _env_str("XQUIK_BASE_URL", _DEFAULT_XQUIK_BASE_URL).rstrip("/")
-    return raw if raw.endswith("/api/v1") else f"{raw}/api/v1"
-
-
-def _xquik_headers() -> dict[str, str]:
-    api_key = _env_str("XQUIK_API_KEY")
-    if not api_key:
-        raise RuntimeError("XQUIK_API_KEY is required when TWITTER_BACKEND=hermes_tweet")
-    if api_key.startswith("xq_"):
-        return {"X-API-Key": api_key}
-    return {"Authorization": f"Bearer {api_key}"}
-
-
-def _extract_tweet_records(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, list):
-        return [_as_dict(item) for item in payload if isinstance(item, dict)]
-
-    record = _as_dict(payload)
-    data = _as_dict(record.get("data"))
-    candidates: list[Any] = [
-        record.get("tweets"),
-        record.get("results"),
-        record.get("items"),
-        record.get("bookmarks"),
-        record.get("data"),
-        data.get("tweets"),
-        data.get("results"),
-        data.get("items"),
-        data.get("bookmarks"),
-    ]
-    for candidate in candidates:
-        if isinstance(candidate, list):
-            return [_as_dict(item) for item in candidate if isinstance(item, dict)]
-    return []
-
-
-def _record_text(record: dict[str, Any]) -> str:
-    return _string(
-        record.get("text")
-        or record.get("fullText")
-        or record.get("full_text")
-        or record.get("content")
-        or record.get("body")
-    ).strip()
-
-
-def _record_author(record: dict[str, Any], source: dict) -> tuple[str, str]:
-    user = _as_dict(record.get("author") or record.get("user"))
-    name = _string(user.get("name") or record.get("author_name") or source["name"]).strip()
-    handle = _string(
-        user.get("username")
-        or user.get("screen_name")
-        or record.get("username")
-        or record.get("handle")
-        or source["handle"]
-    ).lstrip("@")
-    return name or source["name"], handle
-
-
-def _record_url(record: dict[str, Any], handle: str) -> str:
-    url = _string(record.get("url") or record.get("tweet_url") or record.get("link")).strip()
-    if url:
-        return url
-    tweet_id = _string(record.get("id") or record.get("tweetId") or record.get("tweet_id")).strip()
-    return f"https://x.com/{handle}/status/{tweet_id}" if tweet_id else ""
-
-
-def _record_image_url(record: dict[str, Any]) -> str:
-    for key in ("image_url", "imageUrl", "thumbnail", "thumbnail_url"):
-        value = _string(record.get(key)).strip()
-        if value:
-            return value
-    media = record.get("media")
-    if isinstance(media, list):
-        for item in media:
-            media_record = _as_dict(item)
-            value = _string(
-                media_record.get("mediaUrl")
-                or media_record.get("media_url_https")
-                or media_record.get("preview_image_url")
-                or media_record.get("url")
-            ).strip()
-            if value:
-                return value
-    return ""
-
-
-def _hermes_tweet_item(record: dict[str, Any], source: dict, lookback_days: int) -> dict | None:
-    tweet = _as_dict(record.get("tweet")) or record
-    text = _record_text(tweet)
-    author, handle = _record_author(tweet, source)
-    tweet_url = _record_url(tweet, handle)
-    if not tweet_url:
-        return None
-
-    date_iso = _parse_tweet_date(
-        _string(
-            tweet.get("created_at")
-            or tweet.get("createdAt")
-            or tweet.get("date")
-            or tweet.get("published_at")
-        )
-    )
-    if not _is_within_window(date_iso, lookback_days):
-        return None
-
-    item = _tweet_to_item(tweet_url, text, date_iso, author, source)
-    item["raw_meta"]["twitter_backend"] = "hermes_tweet"
-    item["raw_meta"]["author_handle"] = f"@{handle}" if handle else ""
-
-    tweet_id = _string(tweet.get("id") or tweet.get("tweetId") or tweet.get("tweet_id")).strip()
-    if tweet_id:
-        item["raw_meta"]["tweet_id"] = tweet_id
-
-    metrics = tweet.get("public_metrics") or tweet.get("metrics")
-    if isinstance(metrics, dict):
-        item["raw_meta"]["public_metrics"] = metrics
-    else:
-        metric_fields = {
-            key: tweet[key]
-            for key in (
-                "bookmarkCount",
-                "likeCount",
-                "quoteCount",
-                "replyCount",
-                "retweetCount",
-                "viewCount",
-            )
-            if isinstance(tweet.get(key), (int, float))
-        }
-        if metric_fields:
-            item["raw_meta"]["public_metrics"] = metric_fields
-
-    image_url = _record_image_url(tweet)
-    if image_url:
-        item["image_url"] = image_url
-
-    return item
 
 
 async def _fetch_hermes_tweet_account(
@@ -432,27 +240,34 @@ async def _fetch_hermes_tweet_account(
     max_tweets: int,
     lookback_days: int,
 ) -> list[dict]:
+    from pipeline.ingestion.twitter_xquik import fetch_account
+
     handle = source["handle"].lstrip("@")
 
-    print(f"\n{'-' * 56}", flush=True)
-    print(f"  @{handle}  ({source['name']})", flush=True)
-    print(f"{'-' * 56}", flush=True)
+    print(f"\n{'-' * 56}", file=sys.stderr, flush=True)
+    print(f"  @{handle}  ({source['name']})", file=sys.stderr, flush=True)
+    print(f"{'-' * 56}", file=sys.stderr, flush=True)
     _step("Fetching through Hermes Tweet/Xquik search")
 
-    response = await client.get(
-        "/x/tweets/search",
-        params={"q": f"from:{handle}", "limit": str(max_tweets)},
+    tweets = await fetch_account(
+        client,
+        source,
+        max_tweets=max_tweets,
+        lookback_days=lookback_days,
     )
-    response.raise_for_status()
+    items = []
+    for tweet in tweets:
+        item = _tweet_to_item(tweet.url, tweet.text, tweet.date, tweet.author, source)
+        item["raw_meta"]["twitter_backend"] = "hermes_tweet"
+        item["raw_meta"]["author_handle"] = f"@{tweet.author_handle}"
+        if tweet.tweet_id:
+            item["raw_meta"]["tweet_id"] = tweet.tweet_id
+        if tweet.metrics:
+            item["raw_meta"]["public_metrics"] = tweet.metrics
+        if tweet.image_url:
+            item["image_url"] = tweet.image_url
+        items.append(item)
 
-    items = [
-        item
-        for item in (
-            _hermes_tweet_item(record, source, lookback_days)
-            for record in _extract_tweet_records(response.json())
-        )
-        if item is not None
-    ]
     items = _merge_bursts(items)
     _step("OK @%s -> %d item(s) after burst merge", handle, len(items))
     return items
@@ -460,11 +275,10 @@ async def _fetch_hermes_tweet_account(
 
 # ── page interaction ──────────────────────────────────────────────────────────
 
-
 def _step(msg: str, *args) -> None:
-    """Print a visible step to stdout regardless of log level."""
+    """Print a visible step to stderr without corrupting CLI JSON."""
     formatted = msg % args if args else msg
-    print(f"  >> {formatted}", flush=True)
+    print(f"  >> {formatted}", file=sys.stderr, flush=True)
 
 
 async def _check_login_wall(page) -> bool:
@@ -476,7 +290,6 @@ async def _check_login_wall(page) -> bool:
         return await login_btn.count() > 0
     except Exception:
         return False
-
 
 async def _click_posts_tab(page) -> None:
     try:
@@ -494,7 +307,6 @@ async def _click_posts_tab(page) -> None:
     except Exception as exc:
         _step("Posts tab click failed: %s", exc)
 
-
 async def _expand_show_more(page) -> None:
     try:
         show_more = page.locator('[data-testid="tweet-text-show-more-link"]')
@@ -510,7 +322,6 @@ async def _expand_show_more(page) -> None:
     except Exception:
         pass
 
-
 async def _scrape_account(
     page,
     source: dict,
@@ -522,9 +333,9 @@ async def _scrape_account(
     items: list[dict] = []
     seen_urls: set[str] = set()
 
-    print(f"\n{'-' * 56}", flush=True)
-    print(f"  @{handle}  ({source['name']})", flush=True)
-    print(f"{'-' * 56}", flush=True)
+    print(f"\n{'-'*56}", file=sys.stderr, flush=True)
+    print(f"  @{handle}  ({source['name']})", file=sys.stderr, flush=True)
+    print(f"{'-'*56}", file=sys.stderr, flush=True)
 
     try:
         _step("Navigating to %s", url)
@@ -545,10 +356,7 @@ async def _scrape_account(
         await asyncio.sleep(1.5)
 
         if await _check_login_wall(page):
-            _step(
-                "WARN  Login wall detected - not logged in. Open Chrome manually, "
-                "log into X, then re-run."
-            )
+            _step("WARN  Login wall detected - not logged in. Open Chrome manually, log into X, then re-run.")
             log.warning("Twitter: login wall for @%s", handle)
             return []
 
@@ -600,23 +408,18 @@ async def _scrape_account(
                         _step("  skip [%d] outside %d-day window (%s)", i, lookback_days, date_iso)
                         continue
 
-                    # text - quote-tweets nest 2 tweetText nodes (outer comment + quoted post)
+                    # text — quote-tweets nest 2 tweetText nodes (outer comment + quoted post)
                     text_els = article.locator('[data-testid="tweetText"]')
                     text_count = await text_els.count()
-                    main_text = (
-                        (await text_els.nth(0).inner_text()).strip() if text_count > 0 else ""
-                    )
-                    quoted_text = (
-                        (await text_els.nth(1).inner_text()).strip() if text_count > 1 else ""
-                    )
+                    main_text = (await text_els.nth(0).inner_text()).strip() if text_count > 0 else ""
+                    quoted_text = (await text_els.nth(1).inner_text()).strip() if text_count > 1 else ""
                     if main_text.startswith("RT @"):
                         log.debug("  skip [%d] retweet", i)
                         continue
 
-                    # author - outer (commenter) and optional quoted poster.
-                    # User-Name's inner_text is multiline:
-                    # "Display Name\nVerified...\n@handle\n·\n15h"
-                    # We pull the display name and first line starting with @.
+                    # author — outer (commenter) and optional quoted poster.
+                    # User-Name's inner_text is multiline: "Display Name\nVerified...\n@handle\n·\n15h"
+                    # We pull the display name (first line) and the @handle (first line starting with @).
                     # name_count > 1 signals a quote-tweet even when the quoted post is media-only.
                     # NOTE: for reposts, name_els.nth(0) is the ORIGINAL poster (not the reposter),
                     # because X renders the reposter only in the socialContext badge above.
@@ -642,7 +445,7 @@ async def _scrape_account(
                         )
                     is_quote = name_count > 1
 
-                    # repost - X shows "<name> reposted" in [data-testid="socialContext"]
+                    # repost — X shows "<name> reposted" in [data-testid="socialContext"]
                     # at the top of the article. Same testid is also used for "Pinned",
                     # "Replying to", etc., so we filter on the word "reposted".
                     is_repost = False
@@ -654,7 +457,7 @@ async def _scrape_account(
                         except Exception:
                             pass
 
-                    # media - try in order:
+                    # media — try in order:
                     #   1. outer/quoted tweetPhoto img (native photos)
                     #   2. <video> poster (video thumbnail; also used for GIFs)
                     #   3. link card img (external article previews like openai.com posts)
@@ -720,7 +523,11 @@ async def _scrape_account(
             await _expand_show_more(page)
 
         items = _merge_bursts(items)
-        print(f"\n  OK @{handle} -> {len(items)} item(s) after burst merge\n", flush=True)
+        print(
+            f"\n  OK @{handle} -> {len(items)} item(s) after burst merge\n",
+            file=sys.stderr,
+            flush=True,
+        )
         return items
 
     except Exception as exc:
@@ -731,11 +538,9 @@ async def _scrape_account(
 
 # ── pipeline class ────────────────────────────────────────────────────────────
 
-
 class TwitterPipeline:
     def __init__(self, db_path: Path | str | None = None):
         from pipeline.storage import DEFAULT_DB_PATH, ItemStore
-
         self._db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self._store = ItemStore(self._db_path)
 
@@ -753,9 +558,9 @@ class TwitterPipeline:
 
         from playwright.async_api import async_playwright
 
-        headless = _env_bool("TWITTER_HEADLESS", False)
+        headless   = _env_bool("TWITTER_HEADLESS", False)
         max_tweets = _env_int("TWITTER_MAX_TWEETS", 15)
-        profile = _chrome_profile_dir()
+        profile    = _chrome_profile_dir()
 
         result = TwitterResult(ok=True)
 
@@ -770,8 +575,7 @@ class TwitterPipeline:
 
                 if not exe:
                     raise RuntimeError(
-                        "Chrome executable not found. Set CHROME_EXECUTABLE env "
-                        "var to your chrome.exe path."
+                        "Chrome executable not found. Set CHROME_EXECUTABLE env var to your chrome.exe path."
                     )
 
                 _kill_syndicate_chrome()
@@ -800,11 +604,10 @@ class TwitterPipeline:
                         try:
                             await page.title()
                         except Exception:
-                            _step("Page closed - opening new tab...")
+                            _step("Page closed — opening new tab...")
                             page = await context.new_page()
                             await page.add_init_script(
-                                "Object.defineProperty(navigator, 'webdriver', "
-                                "{get: () => undefined})"
+                                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
                             )
                         items = await asyncio.wait_for(
                             _scrape_account(page, source, max_tweets, days),
@@ -838,14 +641,13 @@ class TwitterPipeline:
         result.ok = result.ok and result.failed == 0
         log.info(
             "Twitter done: fetched=%d saved=%d skipped=%d failed=%d",
-            result.fetched,
-            result.saved,
-            result.skipped,
-            result.failed,
+            result.fetched, result.saved, result.skipped, result.failed,
         )
         return result
 
     async def _run_hermes_tweet_async(self, sources: list[dict], days: int) -> TwitterResult:
+        from pipeline.ingestion.twitter_xquik import auth_headers, base_url
+
         max_tweets = _env_int("TWITTER_MAX_TWEETS", 15)
         result = TwitterResult(ok=True)
 
@@ -853,8 +655,8 @@ class TwitterPipeline:
 
         try:
             async with httpx.AsyncClient(
-                base_url=_normalise_xquik_base_url(),
-                headers=_xquik_headers(),
+                base_url=base_url(),
+                headers=auth_headers(),
                 timeout=30.0,
             ) as client:
                 for source in sources:

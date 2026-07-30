@@ -7,14 +7,14 @@ the unified item schema, persists to SQLite.
 
 ```mermaid
 flowchart TD
-    A["GmailPipeline.run()"] --> B["IMAP session - auth/gmail.py"]
-    B --> C["select_label - imap.py"]
+    A["GmailPipeline.run()"] --> B["IMAP session — auth/gmail.py"]
+    B --> C["select_label — imap.py"]
     C --> D["search_uids SINCE date"]
     D --> E["fetch_message per UID"]
     E --> F["extract_html_payload"]
-    F --> G["extract() - strip tracking pixels, readability parse"]
-    G --> H["dispatch() - map From: to source_id"]
-    H --> I["gmail_to_item() - normalize to item dict"]
+    F --> G["extract() — strip tracking pixels, readability parse"]
+    G --> H["dispatch() — map From: to source_id"]
+    H --> I["gmail_to_item() — normalize to item dict"]
     I --> J["ItemStore.insert_items()"]
 ```
 
@@ -24,13 +24,13 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["RssPipeline.run()"] --> B["fetch_all() in parallel - feedparser + httpx"]
+    A["RssPipeline.run()"] --> B["fetch_all() in parallel — feedparser + httpx"]
     B --> C["Filter by published_at >= window_since(days)"]
-    C --> D["existing_dedup_keys() - skip already-stored"]
+    C --> D["existing_dedup_keys() — skip already-stored"]
     D --> E{fetch_full flag?}
-    E -->|yes| F["fetch_urls() - readability + OG image"]
+    E -->|yes| F["fetch_urls() — readability + OG image"]
     E -->|no| G["use RSS entry summary as content"]
-    F --> H["rss_to_item() - normalize to item dict"]
+    F --> H["rss_to_item() — normalize to item dict"]
     G --> H
     H --> I["ItemStore.insert_items()"]
 ```
@@ -41,22 +41,20 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A["TwitterPipeline.run()"] --> B["_load_sources() - config/twitter_sources.json"]
+    A["TwitterPipeline.run()"] --> B["_load_sources() — config/twitter_sources.json"]
     B --> BACKEND{"TWITTER_BACKEND"}
     BACKEND -->|playwright| C["Launch Playwright with persistent Chrome profile<br/>CHROME_EXECUTABLE / CHROME_PROFILE_DIR<br/>headless = TWITTER_HEADLESS"]
     BACKEND -->|hermes_tweet| XQ["Create Hermes Tweet/Xquik client<br/>XQUIK_API_KEY / XQUIK_BASE_URL"]
-    C --> D["For each handle:"]
-    XQ --> D
-    D --> E["Navigate https://x.com/<handle>"]
-    D --> XS["Search from:<handle> via /x/tweets/search"]
-    E --> F["Scroll and harvest tweets - TWITTER_MAX_TWEETS cap per account"]
-    XS --> F
+    C --> E["For each handle: navigate https://x.com/<handle>"]
+    XQ --> XS["For each handle: search from:<handle> via /x/tweets/search"]
+    E --> F["Scroll and harvest tweets — TWITTER_MAX_TWEETS cap per account"]
     F --> G["Filter to TWITTER_LOOKBACK_DAYS window"]
     G --> H["Detect repost / quote / has_media via DOM markers"]
-    H --> I["tweet_to_item() - normalize"]
-    I --> J["ItemStore.insert_items() - source_channel='twitter'"]
-    J --> D
-    D -- all handles done --> K["return TwitterResult"]
+    H --> I["tweet_to_item() — normalize"]
+    XS --> XG["Validate response; filter replies and lookback window"]
+    XG --> I
+    I --> J["ItemStore.insert_items() — source_channel='twitter'"]
+    J --> K["return TwitterResult after all handles"]
 ```
 
 **Persistence:** The default Playwright backend uses a persistent user data dir
@@ -73,9 +71,9 @@ without text are normalized with an empty `content` and the
 
 | File | Role |
 |------|------|
-| `gmail.py` | `GmailPipeline` - IMAP ingestion runner |
-| `rss.py` | `RssPipeline` - RSS ingestion runner |
-| `twitter.py` | `TwitterPipeline` - Playwright-driven X.com scraper or Hermes Tweet/Xquik backend |
+| `gmail.py` | `GmailPipeline` — IMAP ingestion runner |
+| `rss.py` | `RssPipeline` — RSS ingestion runner |
+| `twitter.py` | `TwitterPipeline` — Playwright-driven X.com scraper or Hermes Tweet/Xquik backend |
 | `imap.py` | Low-level IMAP ops: select, search, fetch, decode headers |
 | `feeds.py` | Async RSS fetch via feedparser + httpx; date windowing |
 | `fetch.py` | Async per-URL article fetcher; readability extraction; OG image |

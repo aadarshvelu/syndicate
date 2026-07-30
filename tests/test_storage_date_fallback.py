@@ -66,5 +66,8 @@ def test_empty_dates_fall_back_to_fetched_at_across_window_queries(tmp_path) -> 
             "rss-current",
             "gmail-current",
         }
+        summary_rows = store.items_needing_summary()
+        assert _ids(summary_rows[:2]) == {"twitter-current", "gmail-current"}
+        assert summary_rows[-1]["id"] == "rss-old"
         export_rows = store.enriched_primary_items_for_date(datetime.now(UTC).date())
         assert _ids(export_rows) == {"rss-current"}

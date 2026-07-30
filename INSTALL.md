@@ -11,7 +11,7 @@ in this repo. It expects:
 1. A working **syndicate checkout** (this repo, with `uv sync` done)
 2. A **`.env` file at the repo root** holding the credentials the
    pipeline needs (see [`.env.example`](.env.example))
-3. The `SYNDICATE_REPO` env var pointing at that checkout - required ONLY
+3. The `SYNDICATE_REPO` env var pointing at that checkout — required ONLY
    when the agent's cwd isn't the syndicate repo itself
 
 The plugin contains no secrets and no per-machine state. All credentials
@@ -33,13 +33,13 @@ Same as running syndicate directly:
 | Hermes Tweet/Xquik API key | `/syndicate-ingest-twitter` with `TWITTER_BACKEND=hermes_tweet` | Create an API key in Xquik |
 
 If you're only using a subset of channels (e.g. RSS-only), you can skip
-the credentials for the channels you don't need - the corresponding
+the credentials for the channels you don't need — the corresponding
 skills will refuse to start via their preflight check, but the rest of
 the pipeline keeps working.
 
 ## 2. Install paths
 
-### Option A - direct (you cloned this repo)
+### Option A — direct (you cloned this repo)
 
 ```bash
 git clone https://github.com/aadarshvelu/syndicate.git
@@ -49,10 +49,10 @@ cp .env.example .env
 $EDITOR .env                    # fill in the vars you need
 ```
 
-`SYNDICATE_REPO` is not needed in this mode - the skill runs from inside
+`SYNDICATE_REPO` is not needed in this mode — the skill runs from inside
 the repo and falls back to `$(pwd)`.
 
-### Option B - Claude Code plugin install (other working dir)
+### Option B — Claude Code plugin install (other working dir)
 
 Once you have a syndicate checkout, install the plugin from it:
 
@@ -69,10 +69,10 @@ export SYNDICATE_REPO=/path/to/syndicate
 
 The skill bodies all do `cd "${SYNDICATE_REPO:-$(pwd)}"` before invoking
 `uv run python -m pipeline.cli`, so this var is what tells them where to
-go. The `.env` they read lives inside `$SYNDICATE_REPO/.env` - there is
+go. The `.env` they read lives inside `$SYNDICATE_REPO/.env` — there is
 no separate plugin-side env file.
 
-> **Note** - `/plugin marketplace add` currently expects the target dir
+> **Note** — `/plugin marketplace add` currently expects the target dir
 > to contain `.claude-plugin/marketplace.json`. If yours doesn't yet,
 > see "Publishing" below.
 
@@ -128,14 +128,14 @@ come from:
    `load_dotenv(_REPO/".env")` at import time, before any other pipeline
    module loads.
 3. `_REPO` is computed from `Path(__file__).resolve().parents[1]`, so it
-   always points at the actual installed repo - independent of `cwd` or
+   always points at the actual installed repo — independent of `cwd` or
    `SYNDICATE_REPO`.
 4. Shell-exported vars win over `.env` (standard `python-dotenv`
    behavior). Useful for overriding a single value without editing the
    file.
 
 Implication: **Claude Code's own environment doesn't matter**. You don't
-need to export GMAIL_USER in your shell or in the launchd plist - the
+need to export GMAIL_USER in your shell or in the launchd plist — the
 `.env` is the single source of truth, and the subprocess reads it
 directly.
 
@@ -149,7 +149,7 @@ Side-effect skills follow a uniform Step 1:
 
 This is implemented per-skill in each SKILL.md (search them for
 "env_present"). When writing a new skill that needs creds, follow the
-same pattern - there is no shared preamble file.
+same pattern — there is no shared preamble file.
 
 ## 6. Verifying the install
 
@@ -202,7 +202,7 @@ Push the repo, then any user can install with:
 ```
 
 The skills do `cd "${SYNDICATE_REPO:-$(pwd)}"` to find the actual
-pipeline code, so the cached plugin install location is irrelevant - it's
+pipeline code, so the cached plugin install location is irrelevant — it's
 the env var that bridges plugin → pipeline.
 
 Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.

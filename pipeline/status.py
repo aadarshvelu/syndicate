@@ -15,7 +15,7 @@ import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from pipeline.storage import DEFAULT_DB_PATH
@@ -28,29 +28,15 @@ _LOGS_DIR = _REPO_ROOT / "logs"
 # Env vars we report on. Grouped by which pipeline stage needs them so the
 # /syndicate-heal skill can give targeted hints.
 _ENV_KEYS: tuple[str, ...] = (
-    "GMAIL_USER",
-    "GMAIL_APP_PASSWORD",
-    "AI_PROVIDER",
-    "SUMMARIZE_MODEL",
-    "EMBEDDING_MODEL",
-    "EMBEDDING_PROVIDER",
+    "GMAIL_USER", "GMAIL_APP_PASSWORD",
+    "AI_PROVIDER", "SUMMARIZE_MODEL", "EMBEDDING_MODEL", "EMBEDDING_PROVIDER",
     "OLLAMA_HOST",
-    "ANTHROPIC_API_KEY",
-    "OPENAI_API_KEY",
-    "GEMINI_API_KEY",
-    "MINIMAX_API_KEY",
-    "VOYAGE_API_KEY",
-    "COHERE_API_KEY",
-    "FEED_REPO_URL",
-    "FEED_REPO_PAT",
-    "CHROME_EXECUTABLE",
-    "CHROME_PROFILE_DIR",
-    "TWITTER_HEADLESS",
-    "TWITTER_BACKEND",
-    "XQUIK_API_KEY",
-    "XQUIK_BASE_URL",
-    "TELEGRAM_BOT_TOKEN",
-    "TELEGRAM_CHAT_ID",
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "MINIMAX_API_KEY",
+    "VOYAGE_API_KEY", "COHERE_API_KEY",
+    "FEED_REPO_URL", "FEED_REPO_PAT",
+    "CHROME_EXECUTABLE", "CHROME_PROFILE_DIR", "TWITTER_HEADLESS",
+    "TWITTER_BACKEND", "XQUIK_API_KEY", "XQUIK_BASE_URL",
+    "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
     "SYNDICATE_REPO",
 )
 
@@ -71,6 +57,7 @@ class StatusSnapshot:
     ollama_reachable: bool = False
     ollama_models_loaded: list[str] = field(default_factory=list)
     env_present: dict[str, bool] = field(default_factory=dict)
+    twitter_backend: str = "playwright"
     git_branch: str | None = None
     git_dirty: bool = False
     errors: list[str] = field(default_factory=list)
@@ -88,7 +75,7 @@ def _query_db(db_path: Path, snap: StatusSnapshot) -> None:
         cur.execute("SELECT COUNT(*) FROM items")
         snap.items_total = cur.fetchone()[0]
 
-        cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat(timespec="seconds")
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
         cur.execute("SELECT COUNT(*) FROM items WHERE fetched_at >= ?", (cutoff,))
         snap.items_last_24h = cur.fetchone()[0]
 
@@ -98,7 +85,9 @@ def _query_db(db_path: Path, snap: StatusSnapshot) -> None:
         )
         snap.items_unsummarized = cur.fetchone()[0]
 
-        cur.execute("SELECT COUNT(DISTINCT cluster_id) FROM items WHERE cluster_id IS NOT NULL")
+        cur.execute(
+            "SELECT COUNT(DISTINCT cluster_id) FROM items WHERE cluster_id IS NOT NULL"
+        )
         snap.clusters_total = cur.fetchone()[0]
 
         # Latest run per channel — runs is append-only, so MAX(run_id) is freshest.
@@ -121,14 +110,14 @@ def _query_db(db_path: Path, snap: StatusSnapshot) -> None:
             else:
                 errors_parsed = []
             snap.last_run_per_channel[row["channel"]] = {
-                "started_at": row["started_at"],
+                "started_at":  row["started_at"],
                 "finished_at": row["finished_at"],
-                "ok": bool(row["ok"]) if row["ok"] is not None else None,
-                "fetched": row["fetched"],
-                "saved": row["saved"],
-                "skipped": row["skipped"],
-                "failed": row["failed"],
-                "errors": errors_parsed,
+                "ok":          bool(row["ok"]) if row["ok"] is not None else None,
+                "fetched":     row["fetched"],
+                "saved":       row["saved"],
+                "skipped":     row["skipped"],
+                "failed":      row["failed"],
+                "errors":      errors_parsed,
             }
         conn.close()
     except sqlite3.Error as e:
@@ -136,7 +125,7 @@ def _query_db(db_path: Path, snap: StatusSnapshot) -> None:
 
 
 def _read_log_tail(snap: StatusSnapshot, n: int = 20) -> None:
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     log_path = _LOGS_DIR / f"{today}.txt"
     if not log_path.exists():
         return
@@ -153,7 +142,6 @@ def _read_log_tail(snap: StatusSnapshot, n: int = 20) -> None:
 
 def _check_ollama(snap: StatusSnapshot, timeout: float = 2.0) -> None:
     import os
-
     host = (os.environ.get("OLLAMA_HOST") or "http://localhost:11434").strip()
     # OLLAMA_HOST in launchd is sometimes "0.0.0.0" which isn't a URL —
     # normalize to a usable URL for the probe.
@@ -172,8 +160,9 @@ def _check_ollama(snap: StatusSnapshot, timeout: float = 2.0) -> None:
 
 def _check_env(snap: StatusSnapshot) -> None:
     import os
-
     snap.env_present = {k: bool((os.environ.get(k) or "").strip()) for k in _ENV_KEYS}
+    twitter_backend = (os.environ.get("TWITTER_BACKEND") or "").strip()
+    snap.twitter_backend = (twitter_backend or "playwright").lower().replace("-", "_")
 
 
 def _check_disk(snap: StatusSnapshot) -> None:
@@ -190,10 +179,7 @@ def _check_git(snap: StatusSnapshot) -> None:
             out = subprocess.run(
                 ["git", *args],
                 cwd=str(_REPO_ROOT),
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
+                capture_output=True, text=True, timeout=5, check=False,
             )
             return out.stdout.strip() if out.returncode == 0 else None
         except (FileNotFoundError, subprocess.TimeoutExpired):

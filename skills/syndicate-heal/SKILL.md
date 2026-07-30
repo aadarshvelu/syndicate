@@ -1,6 +1,6 @@
 ---
 name: syndicate-heal
-description: Diagnose syndicate health - ollama reachability, disk free, env vars, git state. Reports remediation hints; does NOT auto-fix.
+description: Diagnose syndicate health — ollama reachability, disk free, env vars, git state. Reports remediation hints; does NOT auto-fix.
 when_to_use: |
   When the user reports a failure ("syndicate is broken", "pipeline didn't
   run", "telegram never sent the summary") or when /syndicate-status
@@ -18,11 +18,11 @@ context: fork
 
 # /syndicate-heal
 
-You are diagnosing the syndicate pipeline. **Do not auto-fix anything** -
+You are diagnosing the syndicate pipeline. **Do not auto-fix anything** —
 your job is to report what's wrong with actionable shell commands the user
 can copy. The user takes the remediation step.
 
-## Step 1 - health snapshot
+## Step 1 — health snapshot
 
     cd "${SYNDICATE_REPO:-$(pwd)}" && uv run python -m pipeline.cli health
 
@@ -30,7 +30,7 @@ Then fetch the broader status for context:
 
     cd "${SYNDICATE_REPO:-$(pwd)}" && uv run python -m pipeline.cli status
 
-## Step 2 - check for stuck processes
+## Step 2 — check for stuck processes
 Look for syndicate processes that have been alive too long (≥4h is the
 default cleaner threshold):
 
@@ -40,7 +40,7 @@ For each PID, get elapsed time:
 
     ps -p <PID> -o etime=,command=
 
-## Step 3 - diagnose & recommend
+## Step 3 — diagnose & recommend
 
 Walk through each signal in priority order and surface remediation hints:
 
@@ -55,9 +55,11 @@ Walk through each signal in priority order and surface remediation hints:
 - Walk `env_present` and flag any of these `false`: `GMAIL_USER`,
   `GMAIL_APP_PASSWORD`, `FEED_REPO_URL`, `FEED_REPO_PAT`,
   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
-- For Twitter ingestion, branch on `TWITTER_BACKEND`. If it is
-  `hermes_tweet`, require `XQUIK_API_KEY`. Otherwise require
-  `CHROME_EXECUTABLE` and `CHROME_PROFILE_DIR`.
+- For Twitter ingestion, branch on `status.result.twitter_backend`. If it is
+  `hermes_tweet` or `xquik`, require `XQUIK_API_KEY` in
+  `status.result.env_present`. If it is `playwright`, require
+  `CHROME_EXECUTABLE` and `CHROME_PROFILE_DIR` there. Flag any other value as
+  invalid.
 - For the AI provider, look at `env_present.AI_PROVIDER` (defaults to
   `ollama` if unset) and flag the matching credential as `false`:
   `ollama` → `OLLAMA_HOST`; `anthropic` → `ANTHROPIC_API_KEY`; `openai`
@@ -73,7 +75,7 @@ Walk through each signal in priority order and surface remediation hints:
 
 ### Stuck syndicate processes
 - Symptom: pgrep shows a PID with elapsed time > 4h
-- Fix: `bash scripts/clean_stale_runs.sh` - kills processes over the 4h
+- Fix: `bash scripts/clean_stale_runs.sh` — kills processes over the 4h
   threshold via SIGTERM with SIGKILL fallback. Mac-only (uses macOS `ps`).
 
 ### Last run failed
@@ -90,9 +92,9 @@ Walk through each signal in priority order and surface remediation hints:
 - Note: launchd-driven runs commit their own changes to `news-archive/`
   not to the syndicate repo itself.
 
-## Step 4 - report
+## Step 4 — report
 Produce a short list of red flags with the exact shell command to fix each.
 End with `(rerun /syndicate-status to verify)`. **Do not run any
-remediation command yourself** - the user runs them.
+remediation command yourself** — the user runs them.
 
 Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.

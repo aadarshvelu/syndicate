@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
+from datetime import UTC, datetime, timedelta
 
 import httpx
+import pytest
 
 from pipeline import cli as cli_mod
+from pipeline import status as status_mod
 from pipeline.ingestion import twitter as twitter_mod
+from pipeline.ingestion import twitter_xquik as xquik_mod
 
 
 def test_fetch_hermes_tweet_account_normalizes_items(monkeypatch):
@@ -16,6 +21,12 @@ def test_fetch_hermes_tweet_account_normalizes_items(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/v1/x/tweets/search"
         assert request.url.params["q"] == "from:simonw"
+        assert request.url.params["queryType"] == "Latest"
+        assert request.url.params["replies"] == "exclude"
+        assert request.url.params["limit"] == "5"
+        since_time = datetime.fromisoformat(request.url.params["sinceTime"])
+        expected_since = datetime.now(UTC) - timedelta(days=3650)
+        assert abs((since_time - expected_since).total_seconds()) < 5
         assert request.headers["x-api-key"] == "xq_test"
         return httpx.Response(
             200,
@@ -25,17 +36,20 @@ def test_fetch_hermes_tweet_account_normalizes_items(monkeypatch):
                         "id": "123",
                         "text": "SQLite on the edge is getting interesting",
                         "createdAt": "Sat May 23 08:00:00 +0000 2026",
+                        "url": "javascript:alert(1)",
                         "author": {
                             "name": "Simon Willison",
                             "username": "simonw",
                         },
                         "likeCount": 42,
+                        "replyCount": False,
                         "retweetCount": 5,
                         "media": [
+                            {"mediaUrl": "javascript:alert(1)"},
                             {
                                 "mediaUrl": "https://img.example/1.jpg",
                                 "url": "https://t.co/example",
-                            }
+                            },
                         ],
                     }
                 ],
@@ -46,7 +60,7 @@ def test_fetch_hermes_tweet_account_normalizes_items(monkeypatch):
         transport = httpx.MockTransport(handler)
         async with httpx.AsyncClient(
             base_url="https://xquik.test/api/v1",
-            headers=twitter_mod._xquik_headers(),
+            headers=xquik_mod.auth_headers(),
             transport=transport,
         ) as client:
             return await twitter_mod._fetch_hermes_tweet_account(
@@ -78,14 +92,14 @@ def test_fetch_hermes_tweet_account_normalizes_items(monkeypatch):
     assert items[0]["image_url"] == "https://img.example/1.jpg"
 
 
-def test_hermes_tweet_item_rejects_records_without_a_stable_url() -> None:
+def test_hermes_tweet_item_rejects_records_without_an_id() -> None:
     source = {
         "id": "simonw",
         "handle": "simonw",
         "name": "Simon Willison",
     }
 
-    item = twitter_mod._hermes_tweet_item(
+    item = xquik_mod.normalise_tweet(
         {
             "text": "A record without an ID or URL",
             "createdAt": "2026-05-23T08:00:00Z",
@@ -95,6 +109,88 @@ def test_hermes_tweet_item_rejects_records_without_a_stable_url() -> None:
     )
 
     assert item is None
+
+
+def test_hermes_tweet_item_rejects_replies() -> None:
+    source = {
+        "id": "simonw",
+        "handle": "simonw",
+        "name": "Simon Willison",
+    }
+
+    item = xquik_mod.normalise_tweet(
+        {
+            "id": "123",
+            "text": "A reply",
+            "createdAt": "2026-05-23T08:00:00Z",
+            "isReply": True,
+        },
+        source,
+        lookback_days=3650,
+    )
+
+    assert item is None
+
+
+def test_hermes_tweet_request_clamps_limit(monkeypatch) -> None:
+    monkeypatch.setenv("XQUIK_API_KEY", "xq_test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["limit"] == "200"
+        return httpx.Response(
+            200,
+            json={"tweets": [], "has_next_page": False, "next_cursor": ""},
+        )
+
+    async def run() -> list[dict]:
+        transport = httpx.MockTransport(handler)
+        async with httpx.AsyncClient(
+            base_url="https://xquik.test/api/v1",
+            headers=xquik_mod.auth_headers(),
+            transport=transport,
+        ) as client:
+            return await twitter_mod._fetch_hermes_tweet_account(
+                client,
+                {
+                    "id": "simonw",
+                    "handle": "simonw",
+                    "name": "Simon Willison",
+                },
+                max_tweets=500,
+                lookback_days=2,
+            )
+
+    assert asyncio.run(run()) == []
+
+
+def test_twitter_backend_rejects_unknown_values(monkeypatch) -> None:
+    monkeypatch.setenv("TWITTER_BACKEND", "typo")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        twitter_mod._twitter_backend()
+
+    assert str(exc_info.value) == (
+        "Unsupported TWITTER_BACKEND='typo'. Use playwright or hermes_tweet."
+    )
+
+
+def test_status_reports_the_selected_twitter_backend(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("TWITTER_BACKEND", "hermes-tweet")
+    snapshot = status_mod.StatusSnapshot(
+        db_path=str(tmp_path / "snapshot.db"),
+        db_exists=False,
+    )
+
+    status_mod._check_env(snapshot)
+
+    assert snapshot.twitter_backend == "hermes_tweet"
+    assert snapshot.env_present["TWITTER_BACKEND"] is True
+
+    monkeypatch.setenv("TWITTER_BACKEND", " ")
+    status_mod._check_env(snapshot)
+
+    assert snapshot.twitter_backend == "playwright"
+    assert snapshot.env_present["TWITTER_BACKEND"] is False
 
 
 def test_hermes_tweet_backend_inserts_without_importing_playwright(monkeypatch):
@@ -169,3 +265,27 @@ def test_cli_ingest_twitter_calls_pipeline_run(monkeypatch, tmp_path):
     assert result.fetched == 2
     assert calls == [(str(tmp_path / "snapshot.db"), 4)]
     assert os.environ["TWITTER_HEADLESS"] == "true"
+
+
+def test_cli_missing_xquik_key_keeps_stdout_as_json(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.setenv("TWITTER_BACKEND", "hermes_tweet")
+    monkeypatch.delenv("XQUIK_API_KEY", raising=False)
+
+    exit_code = cli_mod.main(
+        [
+            "--db",
+            str(tmp_path / "snapshot.db"),
+            "ingest-twitter",
+            "--days",
+            "1",
+        ]
+    )
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 1
+    assert payload["ok"] is False
+    assert payload["result"]["errors"] == [
+        "hermes_tweet crash: XQUIK_API_KEY is required when TWITTER_BACKEND=hermes_tweet"
+    ]
+    assert "Twitter pipeline" in captured.err
