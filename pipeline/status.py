@@ -35,6 +35,7 @@ _ENV_KEYS: tuple[str, ...] = (
     "VOYAGE_API_KEY", "COHERE_API_KEY",
     "FEED_REPO_URL", "FEED_REPO_PAT",
     "CHROME_EXECUTABLE", "CHROME_PROFILE_DIR", "TWITTER_HEADLESS",
+    "TWITTER_BACKEND", "XQUIK_API_KEY", "XQUIK_BASE_URL",
     "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
     "SYNDICATE_REPO",
 )
@@ -56,6 +57,7 @@ class StatusSnapshot:
     ollama_reachable: bool = False
     ollama_models_loaded: list[str] = field(default_factory=list)
     env_present: dict[str, bool] = field(default_factory=dict)
+    twitter_backend: str = "playwright"
     git_branch: str | None = None
     git_dirty: bool = False
     errors: list[str] = field(default_factory=list)
@@ -159,6 +161,8 @@ def _check_ollama(snap: StatusSnapshot, timeout: float = 2.0) -> None:
 def _check_env(snap: StatusSnapshot) -> None:
     import os
     snap.env_present = {k: bool((os.environ.get(k) or "").strip()) for k in _ENV_KEYS}
+    twitter_backend = (os.environ.get("TWITTER_BACKEND") or "").strip()
+    snap.twitter_backend = (twitter_backend or "playwright").lower().replace("-", "_")
 
 
 def _check_disk(snap: StatusSnapshot) -> None:

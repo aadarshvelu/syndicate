@@ -254,7 +254,7 @@ flowchart TD
     EXP -- "git push HTTPS" --> ARC[(news-archive<br/>GitHub repo<br/>public, per-day JSON)]
 ```
 
-The whole pipeline shares one SQLite at [`db/snapshot.db`](db/) and emits a
+The whole pipeline shares one SQLite at `db/snapshot.db` and emits a
 JSON envelope per stage so any agent / cron / skill can drive it. Detailed
 stage docs live alongside the code:
 [`pipeline/dedup/doc.md`](pipeline/dedup/doc.md),
@@ -325,6 +325,14 @@ Side-effect skills carry `disable-model-invocation: true`, so Claude won't
 fire them by accident. You invoke them explicitly. See
 [INSTALL.md](INSTALL.md) for the per-skill env requirements.
 
+Twitter ingestion defaults to Playwright with a persistent Chrome profile.
+If you already use Hermes Tweet/Xquik, set `TWITTER_BACKEND=hermes_tweet`
+and `XQUIK_API_KEY` to fetch the configured handles through that backend
+while keeping the same SQLite schema, dedup, relation linking, summaries,
+and export flow.
+
+Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
+
 ---
 
 ## ⚠️ Honest limitations
@@ -332,9 +340,11 @@ fire them by accident. You invoke them explicitly. See
 - **It's local.** Skills read your `.env`, write to local SQLite, and talk to
   Ollama on `localhost`. Claude Code reaches all of those. Claude's chat web
   app can't — that runtime is sandboxed off from your machine.
-- **Twitter scraping is fragile.** Playwright + a persistent Chrome profile.
-  When X.com changes its DOM, the selectors break and I update them. Skip
-  Twitter if you don't want that maintenance.
+- **Twitter scraping is fragile.** Playwright + a persistent Chrome profile is
+  still the default. When X.com changes its DOM, the selectors break and I
+  update them. Use `TWITTER_BACKEND=hermes_tweet` if you prefer a Hermes
+  Tweet/Xquik API-backed route for the same configured handles, or skip Twitter
+  if you don't want that maintenance.
 - **Tuned for my reading.** Categories, importance heuristics, and the feed
   list reflect what I want to see. Easy to retune — see the category enum in
   [`pipeline/AI/`](pipeline/AI/).

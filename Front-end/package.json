@@ -19,7 +19,7 @@
     "react-dom": "^19.2.5",
     "tailwindcss": "^4.2.4",
     "three": "^0.184.0",
-    "vite-plugin-pwa": "^1.2.0"
+    "vite-plugin-pwa": "^1.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -31,5 +31,8 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.5.0",
     "vite": "^8.0.10"
+  },
+  "overrides": {
+    "jake": "12.10.1"
   }
 }

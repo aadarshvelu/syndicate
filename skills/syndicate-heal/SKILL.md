@@ -55,6 +55,11 @@ Walk through each signal in priority order and surface remediation hints:
 - Walk `env_present` and flag any of these `false`: `GMAIL_USER`,
   `GMAIL_APP_PASSWORD`, `FEED_REPO_URL`, `FEED_REPO_PAT`,
   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
+- For Twitter ingestion, branch on `status.result.twitter_backend`. If it is
+  `hermes_tweet` or `xquik`, require `XQUIK_API_KEY` in
+  `status.result.env_present`. If it is `playwright`, require
+  `CHROME_EXECUTABLE` and `CHROME_PROFILE_DIR` there. Flag any other value as
+  invalid.
 - For the AI provider, look at `env_present.AI_PROVIDER` (defaults to
   `ollama` if unset) and flag the matching credential as `false`:
   `ollama` → `OLLAMA_HOST`; `anthropic` → `ANTHROPIC_API_KEY`; `openai`
@@ -91,3 +96,5 @@ Walk through each signal in priority order and surface remediation hints:
 Produce a short list of red flags with the exact shell command to fix each.
 End with `(rerun /syndicate-status to verify)`. **Do not run any
 remediation command yourself** — the user runs them.
+
+Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.

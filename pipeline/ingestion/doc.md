@@ -42,22 +42,26 @@ flowchart TD
 ```mermaid
 flowchart TD
     A["TwitterPipeline.run()"] --> B["_load_sources() — config/twitter_sources.json"]
-    B --> C["Launch Playwright with persistent Chrome profile<br/>CHROME_EXECUTABLE / CHROME_PROFILE_DIR<br/>headless = TWITTER_HEADLESS"]
-    C --> D["For each handle:"]
-    D --> E["Navigate https://x.com/<handle>"]
+    B --> BACKEND{"TWITTER_BACKEND"}
+    BACKEND -->|playwright| C["Launch Playwright with persistent Chrome profile<br/>CHROME_EXECUTABLE / CHROME_PROFILE_DIR<br/>headless = TWITTER_HEADLESS"]
+    BACKEND -->|hermes_tweet| XQ["Create Hermes Tweet/Xquik client<br/>XQUIK_API_KEY / XQUIK_BASE_URL"]
+    C --> E["For each handle: navigate https://x.com/<handle>"]
+    XQ --> XS["For each handle: search from:<handle> via /x/tweets/search"]
     E --> F["Scroll and harvest tweets — TWITTER_MAX_TWEETS cap per account"]
     F --> G["Filter to TWITTER_LOOKBACK_DAYS window"]
     G --> H["Detect repost / quote / has_media via DOM markers"]
     H --> I["tweet_to_item() — normalize"]
+    XS --> XG["Validate response; filter replies and lookback window"]
+    XG --> I
     I --> J["ItemStore.insert_items() — source_channel='twitter'"]
-    J --> D
-    D -- all handles done --> K["return TwitterResult"]
+    J --> K["return TwitterResult after all handles"]
 ```
 
-**Persistence:** Uses a persistent user data dir (`CHROME_PROFILE_DIR`)
-so the X.com session cookie survives across runs. First-time setup:
-`bash scripts/setup_agent.sh` opens Chrome non-headless so you can log
-in once.
+**Persistence:** The default Playwright backend uses a persistent user data dir
+(`CHROME_PROFILE_DIR`) so the X.com session cookie survives across runs.
+First-time setup: `bash scripts/setup_agent.sh` opens Chrome non-headless so
+you can log in once. The `hermes_tweet` backend skips browser login and uses
+`XQUIK_API_KEY` for the same configured handles.
 
 **Pre-filter:** Empty tweet bodies are dropped. Pure media-only tweets
 without text are normalized with an empty `content` and the
@@ -69,7 +73,7 @@ without text are normalized with an empty `content` and the
 |------|------|
 | `gmail.py` | `GmailPipeline` — IMAP ingestion runner |
 | `rss.py` | `RssPipeline` — RSS ingestion runner |
-| `twitter.py` | `TwitterPipeline` — Playwright-driven X.com scraper |
+| `twitter.py` | `TwitterPipeline` — Playwright-driven X.com scraper or Hermes Tweet/Xquik backend |
 | `imap.py` | Low-level IMAP ops: select, search, fetch, decode headers |
 | `feeds.py` | Async RSS fetch via feedparser + httpx; date windowing |
 | `fetch.py` | Async per-URL article fetcher; readability extraction; OG image |
@@ -95,3 +99,5 @@ raw_meta        JSON blob of channel-specific metadata
                   (RSS: og:image, Twitter: is_repost/is_quote/has_media)
 image_url       OG/Twitter card image (RSS), media URL (Twitter)
 ```
+
+Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.

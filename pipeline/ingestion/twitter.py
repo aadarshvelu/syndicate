@@ -1,17 +1,20 @@
-"""Twitter/X scraper using Playwright with a persistent Chrome profile.
+"""Twitter/X ingestion through Playwright or Xquik.
 
-Scrapes recent tweets from configured high-profile accounts and normalises
-them into the same item schema used by Gmail/RSS pipelines.
+Fetches recent tweets from configured accounts and normalises them into the
+same item schema used by Gmail/RSS pipelines.
 
 Requirements:
     pip install playwright
     playwright install chrome   (or use system Chrome via channel="chrome")
 
 Env vars (all optional - defaults shown):
+    TWITTER_BACKEND     playwright  (or hermes_tweet / xquik)
     CHROME_PROFILE_DIR   path to Chrome user data dir
     TWITTER_HEADLESS     false
     TWITTER_MAX_TWEETS   15   per account
     TWITTER_LOOKBACK_DAYS 2
+    XQUIK_API_KEY        required when TWITTER_BACKEND=hermes_tweet
+    XQUIK_BASE_URL       https://xquik.com/api/v1
 """
 
 from __future__ import annotations
@@ -24,17 +27,33 @@ import os
 import platform
 import re
 import subprocess
+import sys
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
+
 log = logging.getLogger(__name__)
 
 _CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "twitter_sources.json"
 
 # ── env / defaults ────────────────────────────────────────────────────────────
+
+def _env_str(key: str, default: str = "") -> str:
+    return os.getenv(key, default).strip()
+
+
+def _twitter_backend() -> str:
+    backend = _env_str("TWITTER_BACKEND", "playwright").lower().replace("-", "_")
+    if backend in {"", "playwright"}:
+        return "playwright"
+    if backend in {"hermes_tweet", "xquik"}:
+        return "hermes_tweet"
+    raise RuntimeError(f"Unsupported TWITTER_BACKEND={backend!r}. Use playwright or hermes_tweet.")
+
 
 def _chrome_executable() -> str | None:
     override = os.getenv("CHROME_EXECUTABLE", "").strip()
@@ -168,12 +187,12 @@ def _kill_syndicate_chrome() -> None:
 
 
 def _parse_tweet_date(dt_str: str) -> str:
-    """Parse ISO datetime string from <time datetime="..."> -> ISO8601 UTC."""
+    """Parse an ISO datetime string into ISO 8601 UTC."""
     try:
         dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-    except Exception:
-        return _now_iso()
+    except (AttributeError, ValueError):
+        return ""
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 def _is_within_window(date_iso: str, days: int) -> bool:
     try:
@@ -215,12 +234,51 @@ def _tweet_to_item(
     }
 
 
+async def _fetch_hermes_tweet_account(
+    client: httpx.AsyncClient,
+    source: dict,
+    max_tweets: int,
+    lookback_days: int,
+) -> list[dict]:
+    from pipeline.ingestion.twitter_xquik import fetch_account
+
+    handle = source["handle"].lstrip("@")
+
+    print(f"\n{'-' * 56}", file=sys.stderr, flush=True)
+    print(f"  @{handle}  ({source['name']})", file=sys.stderr, flush=True)
+    print(f"{'-' * 56}", file=sys.stderr, flush=True)
+    _step("Fetching through Hermes Tweet/Xquik search")
+
+    tweets = await fetch_account(
+        client,
+        source,
+        max_tweets=max_tweets,
+        lookback_days=lookback_days,
+    )
+    items = []
+    for tweet in tweets:
+        item = _tweet_to_item(tweet.url, tweet.text, tweet.date, tweet.author, source)
+        item["raw_meta"]["twitter_backend"] = "hermes_tweet"
+        item["raw_meta"]["author_handle"] = f"@{tweet.author_handle}"
+        if tweet.tweet_id:
+            item["raw_meta"]["tweet_id"] = tweet.tweet_id
+        if tweet.metrics:
+            item["raw_meta"]["public_metrics"] = tweet.metrics
+        if tweet.image_url:
+            item["image_url"] = tweet.image_url
+        items.append(item)
+
+    items = _merge_bursts(items)
+    _step("OK @%s -> %d item(s) after burst merge", handle, len(items))
+    return items
+
+
 # ── page interaction ──────────────────────────────────────────────────────────
 
 def _step(msg: str, *args) -> None:
-    """Print a visible step to stdout regardless of log level."""
+    """Print a visible step to stderr without corrupting CLI JSON."""
     formatted = msg % args if args else msg
-    print(f"  >> {formatted}", flush=True)
+    print(f"  >> {formatted}", file=sys.stderr, flush=True)
 
 
 async def _check_login_wall(page) -> bool:
@@ -275,9 +333,9 @@ async def _scrape_account(
     items: list[dict] = []
     seen_urls: set[str] = set()
 
-    print(f"\n{'-'*56}", flush=True)
-    print(f"  @{handle}  ({source['name']})", flush=True)
-    print(f"{'-'*56}", flush=True)
+    print(f"\n{'-'*56}", file=sys.stderr, flush=True)
+    print(f"  @{handle}  ({source['name']})", file=sys.stderr, flush=True)
+    print(f"{'-'*56}", file=sys.stderr, flush=True)
 
     try:
         _step("Navigating to %s", url)
@@ -465,7 +523,11 @@ async def _scrape_account(
             await _expand_show_more(page)
 
         items = _merge_bursts(items)
-        print(f"\n  OK @{handle} -> {len(items)} item(s) after burst merge\n", flush=True)
+        print(
+            f"\n  OK @{handle} -> {len(items)} item(s) after burst merge\n",
+            file=sys.stderr,
+            flush=True,
+        )
         return items
 
     except Exception as exc:
@@ -486,12 +548,15 @@ class TwitterPipeline:
         return asyncio.run(self._run_async(days=days))
 
     async def _run_async(self, days: int) -> TwitterResult:
-        from playwright.async_api import async_playwright
-
         sources = _load_sources()
         if not sources:
             log.warning("Twitter: no enabled sources in twitter_sources.json")
             return TwitterResult(ok=True)
+
+        if _twitter_backend() == "hermes_tweet":
+            return await self._run_hermes_tweet_async(sources=sources, days=days)
+
+        from playwright.async_api import async_playwright
 
         headless   = _env_bool("TWITTER_HEADLESS", False)
         max_tweets = _env_int("TWITTER_MAX_TWEETS", 15)
@@ -577,5 +642,66 @@ class TwitterPipeline:
         log.info(
             "Twitter done: fetched=%d saved=%d skipped=%d failed=%d",
             result.fetched, result.saved, result.skipped, result.failed,
+        )
+        return result
+
+    async def _run_hermes_tweet_async(self, sources: list[dict], days: int) -> TwitterResult:
+        from pipeline.ingestion.twitter_xquik import auth_headers, base_url
+
+        max_tweets = _env_int("TWITTER_MAX_TWEETS", 15)
+        result = TwitterResult(ok=True)
+
+        _step("Twitter pipeline - %d accounts, backend=hermes_tweet", len(sources))
+
+        try:
+            async with httpx.AsyncClient(
+                base_url=base_url(),
+                headers=auth_headers(),
+                timeout=30.0,
+            ) as client:
+                for source in sources:
+                    try:
+                        items = await _fetch_hermes_tweet_account(
+                            client,
+                            source,
+                            max_tweets,
+                            days,
+                        )
+                        result.fetched += len(items)
+
+                        if items:
+                            try:
+                                saved, skipped = self._store.insert_items(items)
+                                result.saved += saved
+                                result.skipped += skipped
+                            except Exception as exc:
+                                result.failed += 1
+                                log.warning("Twitter: DB upsert failed: %s", exc)
+
+                    except httpx.HTTPStatusError as exc:
+                        result.failed += 1
+                        result.errors.append(
+                            f"@{source['handle']}: Hermes Tweet HTTP {exc.response.status_code}"
+                        )
+                        log.exception(
+                            "Twitter: Hermes Tweet fetch failed for @%s", source["handle"]
+                        )
+                    except Exception as exc:
+                        result.failed += 1
+                        result.errors.append(f"@{source['handle']}: {type(exc).__name__}: {exc!r}")
+                        log.exception("Twitter: Hermes Tweet account @%s crashed", source["handle"])
+
+        except Exception as exc:
+            result.ok = False
+            result.errors.append(f"hermes_tweet crash: {exc}")
+            log.exception("Twitter: Hermes Tweet backend crashed")
+
+        result.ok = result.ok and result.failed == 0
+        log.info(
+            "Twitter done: fetched=%d saved=%d skipped=%d failed=%d backend=hermes_tweet",
+            result.fetched,
+            result.saved,
+            result.skipped,
+            result.failed,
         )
         return result

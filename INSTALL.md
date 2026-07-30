@@ -29,7 +29,8 @@ Same as running syndicate directly:
 | [`uv`](https://github.com/astral-sh/uv) | Lockfile + venv manager | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | `git` | Used by `/syndicate-export` | system |
 | One AI provider | Summarize + embeddings | Ollama (default) / Anthropic / OpenAI / Gemini / Minimax |
-| Chrome + Playwright | `/syndicate-ingest-twitter` only | `uv run install-browsers` |
+| Chrome + Playwright | `/syndicate-ingest-twitter` with default backend | `uv run install-browsers` |
+| Hermes Tweet/Xquik API key | `/syndicate-ingest-twitter` with `TWITTER_BACKEND=hermes_tweet` | Create an API key in Xquik |
 
 If you're only using a subset of channels (e.g. RSS-only), you can skip
 the credentials for the channels you don't need — the corresponding
@@ -98,9 +99,12 @@ Quick reference of which var unlocks which skill:
 | `COHERE_API_KEY` | Cohere | |
 | `FEED_REPO_URL` | `/syndicate-export` | HTTPS URL of news-archive repo |
 | `FEED_REPO_PAT` | `/syndicate-export` | PAT with `contents: write` |
+| `TWITTER_BACKEND` | `/syndicate-ingest-twitter` | Optional. `playwright` default, or `hermes_tweet` |
 | `CHROME_EXECUTABLE` | `/syndicate-ingest-twitter` | Path to a Chrome/Chromium binary |
 | `CHROME_PROFILE_DIR` | `/syndicate-ingest-twitter` | Persistent profile dir (cookies/session) |
 | `TWITTER_HEADLESS` | `/syndicate-ingest-twitter` | Optional, default `true` |
+| `XQUIK_API_KEY` | `/syndicate-ingest-twitter` with `TWITTER_BACKEND=hermes_tweet` | Hermes Tweet/Xquik API key |
+| `XQUIK_BASE_URL` | `/syndicate-ingest-twitter` with `TWITTER_BACKEND=hermes_tweet` | Optional, defaults to `https://xquik.com/api/v1` |
 | `TELEGRAM_BOT_TOKEN` | `/syndicate-notify`, auto-notify on `/syndicate-run` | From @BotFather |
 | `TELEGRAM_CHAT_ID` | `/syndicate-notify`, auto-notify on `/syndicate-run` | Numeric, negative for groups |
 
@@ -200,3 +204,5 @@ Push the repo, then any user can install with:
 The skills do `cd "${SYNDICATE_REPO:-$(pwd)}"` to find the actual
 pipeline code, so the cached plugin install location is irrelevant — it's
 the env var that bridges plugin → pipeline.
+
+Xquik is an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.

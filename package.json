@@ -16,7 +16,8 @@
         "gmail":   ["GMAIL_USER", "GMAIL_APP_PASSWORD"],
         "ai":      ["AI_PROVIDER", "SUMMARIZE_MODEL", "EMBEDDING_MODEL", "EMBEDDING_PROVIDER", "OLLAMA_HOST", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "MINIMAX_API_KEY", "VOYAGE_API_KEY", "COHERE_API_KEY"],
         "export":  ["FEED_REPO_URL", "FEED_REPO_PAT"],
-        "twitter": ["CHROME_EXECUTABLE", "CHROME_PROFILE_DIR", "TWITTER_HEADLESS"],
+        "twitter": ["TWITTER_BACKEND", "CHROME_EXECUTABLE", "CHROME_PROFILE_DIR", "TWITTER_HEADLESS"],
+        "twitterHermesTweet": ["XQUIK_API_KEY", "XQUIK_BASE_URL"],
         "notify":  ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
       },
       "binaries": ["uv", "python3.11", "git"],

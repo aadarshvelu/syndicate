@@ -270,12 +270,12 @@ class ItemStore:
             "       fetched_at, content, cluster_id, is_primary, cluster_method, "
             "       embedding "
             "FROM items "
-            "WHERE COALESCE(date, fetched_at) >= ?"
+            "WHERE COALESCE(NULLIF(date, ''), fetched_at) >= ?"
         )
         params: list = [cutoff]
         if only_unclustered:
             sql += " AND cluster_id IS NULL"
-        sql += " ORDER BY COALESCE(date, fetched_at) DESC"
+        sql += " ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC"
         return list(self.conn.execute(sql, params).fetchall())
 
     def items_clustered_in_window(self, days: int) -> list[sqlite3.Row]:
@@ -289,8 +289,8 @@ class ItemStore:
             "       fetched_at, content, cluster_id, is_primary, cluster_method, "
             "       embedding "
             "FROM items "
-            "WHERE COALESCE(date, fetched_at) >= ? AND cluster_id IS NOT NULL "
-            "ORDER BY COALESCE(date, fetched_at) DESC"
+            "WHERE COALESCE(NULLIF(date, ''), fetched_at) >= ? AND cluster_id IS NOT NULL "
+            "ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC"
         )
         return list(self.conn.execute(sql, [cutoff]).fetchall())
 
@@ -349,7 +349,7 @@ class ItemStore:
                   OR (source_channel = 'twitter'
                       AND image_url IS NOT NULL AND image_url != '')
               )
-            ORDER BY COALESCE(date, fetched_at) DESC
+            ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC
             LIMIT ?
             """,
             (limit,),
@@ -421,8 +421,8 @@ class ItemStore:
                    END AS cluster_size
             FROM items i
             WHERE i.is_primary = 1 AND i.summary IS NOT NULL
-              AND date(COALESCE(i.date, i.fetched_at)) = ?
-            ORDER BY i.importance DESC, COALESCE(i.date, i.fetched_at) DESC
+              AND date(COALESCE(NULLIF(i.date, ''), i.fetched_at)) = ?
+            ORDER BY i.importance DESC, COALESCE(NULLIF(i.date, ''), i.fetched_at) DESC
             """,
             (date_str,),
         ).fetchall())
@@ -457,12 +457,12 @@ class ItemStore:
                    content, embedding
             FROM items
             WHERE source_channel = 'twitter'
-              AND COALESCE(date, fetched_at) >= ?
+              AND COALESCE(NULLIF(date, ''), fetched_at) >= ?
               AND (
                   relation IS NULL
                   OR (relation = 'standalone' AND parent_cluster_id IS NULL)
               )
-            ORDER BY COALESCE(date, fetched_at) DESC
+            ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC
             """,
             (cutoff,),
         ).fetchall())
@@ -477,8 +477,8 @@ class ItemStore:
                    content, embedding, cluster_id
             FROM items
             WHERE source_channel IN ('rss', 'gmail')
-              AND COALESCE(date, fetched_at) >= ?
-            ORDER BY COALESCE(date, fetched_at) DESC
+              AND COALESCE(NULLIF(date, ''), fetched_at) >= ?
+            ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC
             """,
             (cutoff,),
         ).fetchall())
@@ -499,8 +499,8 @@ class ItemStore:
             FROM items
             WHERE source_channel IN ('rss', 'gmail')
               AND is_primary = 1
-              AND COALESCE(date, fetched_at) >= ?
-            ORDER BY COALESCE(date, fetched_at) DESC
+              AND COALESCE(NULLIF(date, ''), fetched_at) >= ?
+            ORDER BY COALESCE(NULLIF(date, ''), fetched_at) DESC
             """,
             (cutoff,),
         ).fetchall())

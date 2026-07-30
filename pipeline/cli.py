@@ -147,7 +147,7 @@ def _cmd_ingest_twitter(args: argparse.Namespace) -> Any:
     if args.headless is not None:
         os.environ["TWITTER_HEADLESS"] = "true" if args.headless else "false"
     from pipeline.ingestion.twitter import TwitterPipeline
-    return asyncio.run(TwitterPipeline(db_path=args.db).run(days=args.days))
+    return TwitterPipeline(db_path=args.db).run(days=args.days)
 
 
 def _cmd_link(args: argparse.Namespace) -> Any:
@@ -311,7 +311,7 @@ def _build_parser() -> argparse.ArgumentParser:
                     help="Only re-process already-fetched HTML; skip network")
     sp.add_argument("--dump-json", default=None)
 
-    sp = sub.add_parser("ingest-twitter", help="Scrape tweets via Playwright")
+    sp = sub.add_parser("ingest-twitter", help="Fetch tweets from the configured backend")
     sp.add_argument("--days", type=int, default=2)
     sp.add_argument("--headless", type=lambda s: s.lower() in ("1", "true", "yes"),
                     default=None,
